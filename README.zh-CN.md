@@ -203,6 +203,10 @@ src/
     ├── install.rs      安装编排（canonical + symlink/copy）
     └── lock.rs         skills-lock.json 读写 + 内容哈希
 
+examples/
+├── add_skill.rs        通过 Manager 门面安装技能（真实用法）
+└── manage.rs           在临时目录上演示 add → list → remove 生命周期
+
 tests/
 ├── common/mod.rs       集成测试共享夹具
 ├── lib_api.rs          库 API 集成测试
@@ -217,6 +221,7 @@ tests/
 ```bash
 cargo build            # 构建
 cargo test             # 运行全部测试（61 单元 + 26 集成）
+cargo run --example manage   # 运行库使用示例
 cargo clippy           # lint
 cargo fmt              # 格式化
 ```

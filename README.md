@@ -206,6 +206,10 @@ src/
     ├── install.rs      Install orchestration (canonical + symlink/copy)
     └── lock.rs         skills-lock.json read/write + content hashing
 
+examples/
+├── add_skill.rs        Install a skill via the Manager facade (real usage)
+└── manage.rs           add → list → remove lifecycle on a scratch dir
+
 tests/
 ├── common/mod.rs       Shared integration-test fixtures
 ├── lib_api.rs          Library API integration tests
@@ -220,6 +224,7 @@ tests/
 ```bash
 cargo build            # build
 cargo test             # run all tests (61 unit + 26 integration)
+cargo run --example manage   # run a library usage example
 cargo clippy           # lint
 cargo fmt              # format
 ```
