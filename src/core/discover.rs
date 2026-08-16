@@ -132,10 +132,29 @@ fn install_internal_skills() -> bool {
 
 /// Validate that a subpath does not escape the base dir (path traversal guard).
 pub fn is_subpath_safe(base: &Path, subpath: &str) -> bool {
+    use std::path::Component;
+
+    // Resolve the base to an absolute path (handles symlinks like /var -> /private/var).
     let base_abs = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
-    let target = base.join(subpath);
-    let target_abs = target.canonicalize().unwrap_or(target);
-    target_abs == base_abs || target_abs.starts_with(&base_abs)
+    // Lexically walk `subpath` from the base, resolving `.` / `..` without touching
+    // the filesystem. This is correct even when the target path does not exist yet:
+    // `canonicalize` would fail there and we'd fall back to a raw path whose `..`
+    // segments defeat component-wise prefix comparison.
+    let mut target = base_abs.clone();
+    for comp in Path::new(subpath).components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // Popping past the base root means the subpath escapes upward.
+                if !target.pop() {
+                    return false;
+                }
+            }
+            Component::RootDir => return false, // absolute subpaths are not allowed
+            Component::Prefix(_) | Component::Normal(_) => target.push(comp.as_os_str()),
+        }
+    }
+    target == base_abs || target.starts_with(&base_abs)
 }
 
 /// Try to parse `dir/SKILL.md` and add it to results (shallow shadowing by name). Returns whether the dir has a SKILL.md.
