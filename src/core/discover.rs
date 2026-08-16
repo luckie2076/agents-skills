@@ -53,7 +53,9 @@ pub const AGENT_PROJECT_SKILL_DIRS: [&str; 27] = [
 /// A discovered skill.
 #[derive(Debug, Clone)]
 pub struct Skill {
+    /// Skill name (from frontmatter).
     pub name: String,
+    /// Skill description (from frontmatter).
     pub description: String,
     /// Directory containing SKILL.md.
     pub dir: PathBuf,
@@ -94,6 +96,7 @@ pub fn parse_skill_md(skill_md: &Path) -> Option<Skill> {
     parse_skill_md_inner(skill_md, false)
 }
 
+/// Like [`parse_skill_md`], but allows including internal skills when `include_internal` is true.
 pub fn parse_skill_md_inner(skill_md: &Path, include_internal: bool) -> Option<Skill> {
     let content = fs::read_to_string(skill_md).ok()?;
     let (data, _body) = split_frontmatter(&content)?;

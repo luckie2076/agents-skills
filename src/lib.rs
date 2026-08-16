@@ -4,6 +4,8 @@
 //! `process::exit`. The CLI binary (see `src/main.rs` + `src/commands`) is responsible
 //! for rendering outcomes and deciding exit codes.
 
+#![warn(missing_docs)]
+
 pub mod core;
 pub mod error;
 pub mod manager;

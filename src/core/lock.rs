@@ -14,20 +14,27 @@ use crate::core::install::sanitize_name;
 use crate::core::source::{Source, SourceType, owner_repo};
 use crate::error::Result;
 
+/// Lock file name (`skills-lock.json`).
 pub const LOCAL_LOCK_FILE: &str = "skills-lock.json";
+/// Current lock file format version.
 pub const CURRENT_VERSION: u32 = 1;
 
+/// The `skills-lock.json` root structure.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LocalLockFile {
+    /// Lock format version.
     pub version: u32,
+    /// Installed skills keyed by (sanitized) name.
     pub skills: BTreeMap<String, LockEntry>,
 }
 
+/// A single skill's lock metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LockEntry {
     /// Source identifier: owner/repo, local path, URL, etc.
     pub source: String,
+    /// Resolved source URL.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
     /// Branch or tag used at install time.
@@ -43,6 +50,7 @@ pub struct LockEntry {
 }
 
 impl LockEntry {
+    /// Construct a lock entry with the given source and content hash.
     pub fn new(source: &str, source_type: &str, hash: String) -> Self {
         LockEntry {
             source: source.to_string(),

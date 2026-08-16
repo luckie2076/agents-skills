@@ -11,14 +11,18 @@ pub const UNIVERSAL_SKILLS_DIR: &str = ".agents/skills";
 
 /// Context for agent detection/dir resolution (owns data, easy to inject in tests).
 pub struct Env {
+    /// Home directory (`~`).
     pub home: PathBuf,
+    /// Config directory (`$XDG_CONFIG_HOME` or `~/.config`).
     pub config: PathBuf,
+    /// Current working directory.
     pub cwd: PathBuf,
     /// Environment variables injectable in tests (reads the real env when None).
     vars: Option<HashMap<String, String>>,
 }
 
 impl Env {
+    /// Construct an environment context from explicit paths.
     pub fn new(home: impl AsRef<Path>, config: impl AsRef<Path>, cwd: impl AsRef<Path>) -> Self {
         Env {
             home: home.as_ref().to_path_buf(),
@@ -50,6 +54,7 @@ pub fn config_home() -> PathBuf {
     }
 }
 
+/// Resolve the user's home directory.
 pub fn home() -> PathBuf {
     dirs::home_dir().unwrap_or_default()
 }
@@ -70,11 +75,17 @@ pub enum GlobalDir {
 /// An agent home key supporting `$VAR || ~/.<dir>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvKey {
+    /// Claude agent home.
     Claude,
+    /// Codex agent home.
     Codex,
+    /// Grok agent home.
     Grok,
+    /// Hermes agent home.
     Hermes,
+    /// Vibe agent home.
     Vibe,
+    /// Autohand agent home.
     Autohand,
 }
 
@@ -93,18 +104,30 @@ pub enum Detect {
     Special(SpecialKey),
 }
 
+/// Special detection rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpecialKey {
+    /// Claude Code.
     Claude,
+    /// Codex.
     Codex,
+    /// OpenClaw.
     Openclaw,
+    /// Eve.
     Eve,
+    /// ZCode.
     Zcode,
+    /// MiniMax.
     Minimax,
+    /// AstrBot.
     Astrbot,
+    /// Zed.
     Zed,
+    /// PromptScript.
     Promptscript,
+    /// Kimi.
     Kimi,
+    /// Universal skills.
     Universal,
     /// Home-dir detection via an EnvKey.
     Env(EnvKey),
@@ -113,17 +136,22 @@ pub enum SpecialKey {
 /// An agent's directory config.
 #[derive(Debug, Clone, Copy)]
 pub struct Agent {
+    /// Agent identifier (used on the CLI).
     pub name: &'static str,
+    /// Human-readable display name.
     pub display: &'static str,
     /// Project-level skills dir (relative to cwd).
     pub skills_dir: &'static str,
+    /// Global skills directory.
     pub global: GlobalDir,
+    /// Install detection rule.
     pub detect: Detect,
     /// Whether it appears in the universal agents list (default true).
     pub show_in_universal_list: bool,
 }
 
 impl Agent {
+    /// Construct an agent config.
     pub const fn new(
         name: &'static str,
         display: &'static str,

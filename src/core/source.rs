@@ -14,6 +14,7 @@ use url::Url;
 
 use crate::error::{Result, SkillsError};
 
+/// The kind of a parsed source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceType {
     /// GitHub repository (has an API/blob fast path).
@@ -33,6 +34,7 @@ pub enum SourceType {
 /// Parsed source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Source {
+    /// Source type.
     pub ty: SourceType,
     /// Primary URL for install/download (resolved absolute path for local sources).
     pub url: String,

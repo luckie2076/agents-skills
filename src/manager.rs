@@ -439,26 +439,31 @@ pub struct ManagerBuilder {
 }
 
 impl ManagerBuilder {
+    /// Override the home directory.
     pub fn home(mut self, p: impl Into<PathBuf>) -> Self {
         self.home = Some(p.into());
         self
     }
 
+    /// Override the config directory.
     pub fn config(mut self, p: impl Into<PathBuf>) -> Self {
         self.config = Some(p.into());
         self
     }
 
+    /// Override the current working directory.
     pub fn cwd(mut self, p: impl Into<PathBuf>) -> Self {
         self.cwd = Some(p.into());
         self
     }
 
+    /// Inject an environment variable override.
     pub fn env_var(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
         self.vars.insert(k.into(), v.into());
         self
     }
 
+    /// Build the [`Manager`], resolving defaults from the real environment.
     pub fn build(self) -> Manager {
         let cwd = self
             .cwd
@@ -478,47 +483,66 @@ impl ManagerBuilder {
 
 // ============================ Request types (clap-free) ============================
 
+/// Request for [`Manager::add`].
 #[derive(Debug, Clone, Default)]
 pub struct AddRequest {
+    /// Source string (local path, GitHub `owner/repo`, git URL, or download URL).
     pub source: String,
+    /// Install globally instead of into the project.
     pub global: bool,
     /// "*" or specific agent names; empty = auto-detect.
     pub agents: Vec<String>,
     /// "*" or specific skill names; empty = all.
     pub skills: Vec<String>,
+    /// List available skills without installing.
     pub list_only: bool,
+    /// Copy files instead of symlinking.
     pub copy: bool,
+    /// Recurse into nested skill directories.
     pub full_depth: bool,
 }
 
+/// Request for [`Manager::list`].
 #[derive(Debug, Clone, Default)]
 pub struct ListRequest {
+    /// List global skills instead of project skills.
     pub global: bool,
+    /// Filter by agent names; empty = all.
     pub agents: Vec<String>,
 }
 
+/// Request for [`Manager::remove`].
 #[derive(Debug, Clone, Default)]
 pub struct RemoveRequest {
     /// Positional skill names.
     pub skills: Vec<String>,
     /// `--skill` names.
     pub skill: Vec<String>,
+    /// Remove global skills instead of project skills.
     pub global: bool,
+    /// Restrict removal to specific agents.
     pub agents: Vec<String>,
+    /// Remove all installed skills.
     pub all: bool,
 }
 
+/// Request for [`Manager::update`].
 #[derive(Debug, Clone, Default)]
 pub struct UpdateRequest {
+    /// Filter by skill names; empty = all.
     pub skills: Vec<String>,
+    /// Force global scope.
     pub global: bool,
+    /// Force project scope.
     pub project: bool,
 }
 
 // ============================ Outcome types ============================
 
+/// Result of [`Manager::add`].
 #[derive(Debug)]
 pub struct AddOutcome {
+    /// The parsed source.
     pub source: Source,
     /// All discovered skills.
     pub skills: Vec<Skill>,
@@ -526,22 +550,33 @@ pub struct AddOutcome {
     pub selected: Vec<Skill>,
     /// Target agent display names.
     pub target_agents: Vec<String>,
+    /// Successfully installed skills.
     pub installed: Vec<InstallSuccess>,
+    /// Failed installations.
     pub failed: Vec<InstallFailure>,
+    /// Whether this was a `--list` request.
     pub list_only: bool,
 }
 
+/// A single successful install (one skill × one agent).
 #[derive(Debug)]
 pub struct InstallSuccess {
+    /// Skill name.
     pub name: String,
+    /// Agent display name.
     pub agent: String,
+    /// Canonical directory (None in copy mode).
     pub canonical_path: Option<PathBuf>,
 }
 
+/// A single failed install (one skill × one agent).
 #[derive(Debug)]
 pub struct InstallFailure {
+    /// Skill name.
     pub skill: String,
+    /// Agent display name.
     pub agent: String,
+    /// Error message.
     pub error: String,
 }
 
@@ -549,30 +584,45 @@ pub struct InstallFailure {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListedSkill {
+    /// Skill name.
     pub name: String,
+    /// Canonical directory path.
     pub path: PathBuf,
+    /// `"project"` or `"global"`.
     pub scope: String,
+    /// Agent display names this skill is linked to.
     pub agents: Vec<String>,
+    /// Source identifier from the lock.
     pub source: Option<String>,
+    /// Resolved source URL.
     pub source_url: Option<String>,
+    /// Source type (e.g. `"github"`, `"local"`).
     pub source_type: Option<String>,
 }
 
+/// Result of [`Manager::remove`].
 #[derive(Debug)]
 pub struct RemoveOutcome {
     /// Installed names scanned (used by the no-args hint).
     pub installed: Vec<String>,
     /// Requested names (used by the no-match hint).
     pub requested: Vec<String>,
+    /// Names actually removed.
     pub removed: Vec<String>,
 }
 
+/// Result of [`Manager::update`].
 #[derive(Debug, Default)]
 pub struct UpdateOutcome {
+    /// Whether the update used global scope.
     pub global: bool,
+    /// Number of successful updates.
     pub updated: usize,
+    /// Number of failed updates.
     pub failed: usize,
+    /// Names of skills that were updated.
     pub updated_names: Vec<String>,
+    /// Failure messages.
     pub failures: Vec<String>,
 }
 

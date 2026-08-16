@@ -15,22 +15,32 @@ use crate::error::Result;
 /// Install mode: symlink (default) or copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallMode {
+    /// Symlink the canonical dir into the agent dir.
     Symlink,
+    /// Copy files directly into the agent dir.
     Copy,
 }
 
+/// Outcome of a single install attempt.
 #[derive(Debug)]
 pub struct InstallResult {
+    /// Whether the install succeeded.
     pub success: bool,
+    /// Destination path.
     #[allow(dead_code)]
     pub path: PathBuf,
+    /// Canonical directory (None in copy mode).
     pub canonical_path: Option<PathBuf>,
+    /// Install mode used.
     #[allow(dead_code)]
     pub mode: InstallMode,
+    /// Whether symlink creation failed.
     #[allow(dead_code)]
     pub symlink_failed: bool,
+    /// Whether the install was skipped (already up to date).
     #[allow(dead_code)]
     pub skipped: bool,
+    /// Error message on failure.
     pub error: Option<String>,
 }
 
@@ -358,11 +368,16 @@ pub fn install_skill_for_agent(
 /// An installed skill (used by list).
 #[derive(Debug)]
 pub struct InstalledSkill {
+    /// Skill name.
     pub name: String,
+    /// Skill description.
     #[allow(dead_code)]
     pub description: String,
+    /// Canonical directory path.
     pub canonical_path: PathBuf,
-    pub scope: String, // "project" | "global"
+    /// `"project"` or `"global"`.
+    pub scope: String,
+    /// Agent names this skill is linked to.
     pub agents: Vec<String>,
 }
 
