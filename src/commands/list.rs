@@ -1,0 +1,89 @@
+//! list: list installed skills (project/global, `--json`, `-a` agent filter).
+
+use crate::cli::{BOLD, CYAN, DIM, ListArgs, RESET, YELLOW};
+use crate::commands::fail_agents;
+use agent_skill::error::Result;
+use agent_skill::{Env, ListRequest, ListedSkill, Manager};
+
+pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
+    let req = ListRequest {
+        global: args.global,
+        agents: args.agent.clone(),
+    };
+    let listed = match manager.list(&req) {
+        Ok(l) => l,
+        Err(e) => return fail_agents(e),
+    };
+
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&listed)?);
+        return Ok(());
+    }
+
+    let scope_label = if args.global { "Global" } else { "Project" };
+    if listed.is_empty() {
+        println!(
+            "{DIM}No {} skills found.{RESET}",
+            scope_label.to_lowercase()
+        );
+        if args.global {
+            println!("{DIM}Try listing project skills without -g{RESET}");
+        } else {
+            println!("{DIM}Try listing global skills with -g{RESET}");
+        }
+        return Ok(());
+    }
+
+    println!("{BOLD}{} Skills{RESET}", scope_label);
+    println!();
+    for skill in &listed {
+        print_skill(skill, manager.env());
+    }
+    println!();
+    Ok(())
+}
+
+fn print_skill(skill: &ListedSkill, env: &Env) {
+    let short = shorten_path(&skill.path, env);
+    let agent_info = if skill.agents.is_empty() {
+        format!("{YELLOW}not linked{RESET}")
+    } else {
+        format_list(&skill.agents)
+    };
+    let source_label = skill.source.clone().unwrap_or_else(|| "local".to_string());
+    println!("{CYAN}{}{RESET} {DIM}{}{RESET}", skill.name, short);
+    println!("  {DIM}Agents:{RESET} {agent_info}  {DIM}Source:{RESET} {source_label}");
+}
+
+fn format_list(items: &[String]) -> String {
+    const MAX: usize = 5;
+    if items.len() <= MAX {
+        items.join(", ")
+    } else {
+        let shown = &items[..MAX];
+        format!("{} +{} more", shown.join(", "), items.len() - MAX)
+    }
+}
+
+fn shorten_path(path: &std::path::Path, env: &Env) -> String {
+    let full = path.to_string_lossy();
+    let home_s = env.home.to_string_lossy();
+    let cwd_s = env.cwd.to_string_lossy();
+    if full == home_s {
+        return "~".to_string();
+    }
+    if let Some(rest) = full.strip_prefix(&*home_s) {
+        if rest.starts_with('/') || rest.starts_with('\\') {
+            return format!("~{rest}");
+        }
+    }
+    if full == cwd_s {
+        return ".".to_string();
+    }
+    if let Some(rest) = full.strip_prefix(&*cwd_s) {
+        if rest.starts_with('/') || rest.starts_with('\\') {
+            return format!(".{rest}");
+        }
+    }
+    full.to_string()
+}

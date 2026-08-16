@@ -1,0 +1,36 @@
+//! Shared fixtures for unit tests (compiled only under `cfg(test)`).
+//!
+//! Centralizes helpers reused by multiple module tests — `Env` construction, `SKILL.md`
+//! directory generation — eliminating duplication across `agents` / `install` / `discover` (DRY).
+
+use std::path::{Path, PathBuf};
+
+use crate::core::agents::Env;
+use crate::core::discover::{Skill, parse_skill_md};
+
+/// Construct an `Env` in a temp dir: home=cwd=tmp, config=tmp/config.
+pub fn env_at(tmp: &tempfile::TempDir) -> Env {
+    Env::new(tmp.path(), &tmp.path().join("config"), tmp.path())
+}
+
+/// Generate a standard `SKILL.md` dir under `root/rel_dir`, returning the SKILL.md path.
+pub fn write_skill_md(root: &Path, rel_dir: &str, name: &str) -> PathBuf {
+    let dir = root.join(rel_dir);
+    std::fs::create_dir_all(&dir).expect("create skill dir");
+    let md = dir.join("SKILL.md");
+    std::fs::write(&md, skill_frontmatter(name)).expect("write SKILL.md");
+    md
+}
+
+/// Generate standard frontmatter content (short body, for discover tests).
+pub fn skill_frontmatter(name: &str) -> String {
+    format!("---\nname: {name}\ndescription: does {name}\n---\n\n# {name}\n\nBody text.\n")
+}
+
+/// Generate a SKILL.md under `dir` and parse it into a `Skill` (for install tests).
+pub fn write_and_parse_skill(dir: &Path, name: &str) -> Skill {
+    std::fs::create_dir_all(dir).expect("create skill dir");
+    let md = dir.join("SKILL.md");
+    std::fs::write(&md, skill_frontmatter(name)).expect("write SKILL.md");
+    parse_skill_md(&md).expect("parse skill md")
+}
