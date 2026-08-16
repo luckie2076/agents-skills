@@ -6,7 +6,7 @@ use predicates::prelude::*;
 
 use common::TestProject;
 
-const VERSION: &str = "1.5.22";
+const VERSION: &str = "0.1.0";
 
 #[test]
 fn version_prints_pure_semver() {

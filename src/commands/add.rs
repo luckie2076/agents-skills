@@ -7,8 +7,10 @@ use std::path::Path;
 
 use crate::cli::{AddArgs, BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW};
 use crate::commands::fail_agents;
+use agent_skill::core::agents::Env;
+use agent_skill::core::source::{Source, SourceType};
 use agent_skill::error::Result;
-use agent_skill::{AddOutcome, AddRequest, Env, Manager, SkillsError, Source, SourceType};
+use agent_skill::{AddOutcome, AddRequest, Manager, SkillsError};
 
 pub fn run(manager: &Manager, args: AddArgs) -> Result<()> {
     let (skills, agents) = if args.all {
@@ -182,18 +184,18 @@ fn shorten_path(path: &Path, env: &Env) -> String {
     if full == home_s {
         return "~".to_string();
     }
-    if let Some(rest) = full.strip_prefix(&*home_s) {
-        if rest.starts_with('/') || rest.starts_with('\\') {
-            return format!("~{rest}");
-        }
+    if let Some(rest) = full.strip_prefix(&*home_s)
+        && (rest.starts_with('/') || rest.starts_with('\\'))
+    {
+        return format!("~{rest}");
     }
     if full == cwd_s {
         return ".".to_string();
     }
-    if let Some(rest) = full.strip_prefix(&*cwd_s) {
-        if rest.starts_with('/') || rest.starts_with('\\') {
-            return format!(".{rest}");
-        }
+    if let Some(rest) = full.strip_prefix(&*cwd_s)
+        && (rest.starts_with('/') || rest.starts_with('\\'))
+    {
+        return format!(".{rest}");
     }
     full.to_string()
 }

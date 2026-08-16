@@ -2,8 +2,9 @@
 
 use crate::cli::{BOLD, CYAN, DIM, ListArgs, RESET, YELLOW};
 use crate::commands::fail_agents;
+use agent_skill::core::agents::Env;
 use agent_skill::error::Result;
-use agent_skill::{Env, ListRequest, ListedSkill, Manager};
+use agent_skill::{ListRequest, ListedSkill, Manager};
 
 pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
     let req = ListRequest {
@@ -72,18 +73,18 @@ fn shorten_path(path: &std::path::Path, env: &Env) -> String {
     if full == home_s {
         return "~".to_string();
     }
-    if let Some(rest) = full.strip_prefix(&*home_s) {
-        if rest.starts_with('/') || rest.starts_with('\\') {
-            return format!("~{rest}");
-        }
+    if let Some(rest) = full.strip_prefix(&*home_s)
+        && (rest.starts_with('/') || rest.starts_with('\\'))
+    {
+        return format!("~{rest}");
     }
     if full == cwd_s {
         return ".".to_string();
     }
-    if let Some(rest) = full.strip_prefix(&*cwd_s) {
-        if rest.starts_with('/') || rest.starts_with('\\') {
-            return format!(".{rest}");
-        }
+    if let Some(rest) = full.strip_prefix(&*cwd_s)
+        && (rest.starts_with('/') || rest.starts_with('\\'))
+    {
+        return format!(".{rest}");
     }
     full.to_string()
 }

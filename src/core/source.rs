@@ -239,15 +239,18 @@ fn parse_shorthand(input: &str) -> Result<Option<Source>> {
     }
 
     // owner/repo@skill (repo has no / or @)
-    if let Some((repo, skill)) = rest.split_once('@') {
-        if !repo.is_empty() && !repo.contains('/') && !repo.contains('@') && !skill.is_empty() {
-            let mut s = Source::new(
-                SourceType::Github,
-                format!("https://github.com/{owner}/{repo}.git"),
-            );
-            s.skill_filter = Some(skill.to_string());
-            return Ok(Some(s));
-        }
+    if let Some((repo, skill)) = rest.split_once('@')
+        && !repo.is_empty()
+        && !repo.contains('/')
+        && !repo.contains('@')
+        && !skill.is_empty()
+    {
+        let mut s = Source::new(
+            SourceType::Github,
+            format!("https://github.com/{owner}/{repo}.git"),
+        );
+        s.skill_filter = Some(skill.to_string());
+        return Ok(Some(s));
     }
 
     // owner/repo[/subpath]

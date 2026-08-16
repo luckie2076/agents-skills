@@ -2,13 +2,19 @@
 
 use crate::cli::{DIM, GREEN, RED, RESET, TEXT, UpdateArgs};
 use agent_skill::error::Result;
-use agent_skill::{Manager, UpdateOutcome, UpdateRequest};
+use agent_skill::{Manager, Scope, UpdateOutcome, UpdateRequest};
 
 pub fn run(manager: &Manager, args: UpdateArgs) -> Result<()> {
+    let scope = if args.global && !args.project {
+        Scope::Global
+    } else if args.project {
+        Scope::Project
+    } else {
+        Scope::Auto
+    };
     let req = UpdateRequest {
+        scope,
         skills: args.skills.clone(),
-        global: args.global,
-        project: args.project,
     };
 
     if !args.skills.is_empty() {

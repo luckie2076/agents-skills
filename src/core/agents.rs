@@ -860,10 +860,10 @@ fn has_dependency(cwd: &Path, name: &str) -> bool {
         return false;
     };
     for section in ["dependencies", "devDependencies"] {
-        if let Some(map) = pkg.get(section).and_then(|v| v.as_object()) {
-            if map.contains_key(name) {
-                return true;
-            }
+        if let Some(map) = pkg.get(section).and_then(|v| v.as_object())
+            && map.contains_key(name)
+        {
+            return true;
         }
     }
     false

@@ -23,7 +23,7 @@ pub enum SkillsError {
     Git(#[from] git2::Error),
     /// HTTP request error.
     #[error(transparent)]
-    Http(#[from] ureq::Error),
+    Http(Box<ureq::Error>),
     /// Zip archive error.
     #[error(transparent)]
     Zip(#[from] zip::result::ZipError),
@@ -39,5 +39,11 @@ impl SkillsError {
     /// Construct a plain-message error.
     pub fn msg(msg: impl Into<String>) -> Self {
         SkillsError::Message(msg.into())
+    }
+}
+
+impl From<ureq::Error> for SkillsError {
+    fn from(e: ureq::Error) -> Self {
+        SkillsError::Http(Box::new(e))
     }
 }

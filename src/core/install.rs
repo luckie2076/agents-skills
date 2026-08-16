@@ -170,10 +170,10 @@ fn create_symlink(target: &Path, link: &Path) -> bool {
         return true; // Same path, no symlink needed.
     }
 
-    if let Some(parent) = link.parent() {
-        if fs::create_dir_all(parent).is_err() {
-            return false;
-        }
+    if let Some(parent) = link.parent()
+        && fs::create_dir_all(parent).is_err()
+    {
+        return false;
     }
     let _ = fs::remove_file(link);
     let _ = fs::remove_dir_all(link);
@@ -456,16 +456,16 @@ pub fn find_skill<'a>(
     }
     // Match by skillPath (directory name).
     if let Some(sp) = skill_path {
-        let dir_name = sp.split('/').filter(|p| !p.is_empty()).next_back();
-        if let Some(dn) = dir_name {
-            if let Some(s) = discovered.iter().find(|s| {
+        let dir_name = sp.split('/').rfind(|p| !p.is_empty());
+        if let Some(dn) = dir_name
+            && let Some(s) = discovered.iter().find(|s| {
                 s.dir
                     .file_name()
                     .map(|f| f.to_string_lossy() == dn)
                     .unwrap_or(false)
-            }) {
-                return Some(s);
-            }
+            })
+        {
+            return Some(s);
         }
     }
     discovered.first().filter(|_| discovered.len() == 1)

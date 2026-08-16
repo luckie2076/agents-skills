@@ -148,11 +148,11 @@ fn try_add_skill_at(
     if !dir.join("SKILL.md").is_file() {
         return false;
     }
-    if let Some(skill) = parse_skill_md_inner(&dir.join("SKILL.md"), include_internal) {
-        if !seen.contains(&skill.name) {
-            seen.insert(skill.name.clone());
-            skills.push(skill);
-        }
+    if let Some(skill) = parse_skill_md_inner(&dir.join("SKILL.md"), include_internal)
+        && !seen.contains(&skill.name)
+    {
+        seen.insert(skill.name.clone());
+        skills.push(skill);
     }
     true
 }
@@ -236,27 +236,26 @@ pub fn discover_skills(
     full_depth: bool,
     include_internal: bool,
 ) -> Result<Vec<Skill>> {
-    if let Some(sp) = subpath {
-        if !is_subpath_safe(base, sp) {
-            return Err(SkillsError::msg(format!(
-                "Invalid subpath: \"{sp}\" resolves outside the repository directory. Subpath must not contain \"..\" segments that escape the base path."
-            )));
-        }
+    if let Some(sp) = subpath
+        && !is_subpath_safe(base, sp)
+    {
+        return Err(SkillsError::msg(format!(
+            "Invalid subpath: \"{sp}\" resolves outside the repository directory. Subpath must not contain \"..\" segments that escape the base path."
+        )));
     }
     let search_path = base.join(subpath.unwrap_or(""));
     let mut skills: Vec<Skill> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
     // A root SKILL.md hit short-circuits (unless --full-depth).
-    if search_path.join("SKILL.md").is_file() {
-        if let Some(skill) = parse_skill_md_inner(&search_path.join("SKILL.md"), include_internal) {
-            if !seen.contains(&skill.name) {
-                seen.insert(skill.name.clone());
-                skills.push(skill);
-                if !full_depth {
-                    return Ok(skills);
-                }
-            }
+    if search_path.join("SKILL.md").is_file()
+        && let Some(skill) = parse_skill_md_inner(&search_path.join("SKILL.md"), include_internal)
+        && !seen.contains(&skill.name)
+    {
+        seen.insert(skill.name.clone());
+        skills.push(skill);
+        if !full_depth {
+            return Ok(skills);
         }
     }
 

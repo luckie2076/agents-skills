@@ -10,7 +10,7 @@ use crate::core::discover::{Skill, parse_skill_md};
 
 /// Construct an `Env` in a temp dir: home=cwd=tmp, config=tmp/config.
 pub fn env_at(tmp: &tempfile::TempDir) -> Env {
-    Env::new(tmp.path(), &tmp.path().join("config"), tmp.path())
+    Env::new(tmp.path(), tmp.path().join("config"), tmp.path())
 }
 
 /// Generate a standard `SKILL.md` dir under `root/rel_dir`, returning the SKILL.md path.

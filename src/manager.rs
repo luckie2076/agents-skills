@@ -26,6 +26,29 @@ use crate::core::source::{Source, SourceType, parse_source};
 use crate::error::{Result, SkillsError};
 
 /// Skill manager: carries injectable context and runs add/list/remove/update.
+///
+/// This is the high-level entry point for library consumers. It resolves an [`Env`]
+/// (home / config / cwd) once at construction, then every operation is a plain method
+/// taking a request struct and returning a structured outcome.
+///
+/// # Examples
+///
+/// ```
+/// use agent_skill::{AddRequest, Manager};
+///
+/// // Real environment:
+/// let real = Manager::new();
+///
+/// // Or a sandboxed environment (no side effects outside the given paths):
+/// let sandboxed = Manager::builder()
+///     .home("/tmp/home")
+///     .config("/tmp/config")
+///     .cwd("/tmp/project")
+///     .build();
+///
+/// let req = AddRequest::new("anthropics/skills");
+/// let _ = (real, sandboxed, req);
+/// ```
 pub struct Manager {
     env: Env,
 }
@@ -38,11 +61,24 @@ impl Default for Manager {
 
 impl Manager {
     /// Build a manager from the real environment (home / config / cwd).
+    ///
+    /// Equivalent to [`Manager::builder`]`().build()`.
     pub fn new() -> Self {
         Self::builder().build()
     }
 
     /// Start customizing a manager (inject home/config/cwd/env vars).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use agent_skill::Manager;
+    ///
+    /// let manager = Manager::builder()
+    ///     .home("/tmp/home")
+    ///     .env_var("CLAUDE_CONFIG_DIR", "/tmp/claude")
+    ///     .build();
+    /// ```
     pub fn builder() -> ManagerBuilder {
         ManagerBuilder::default()
     }
@@ -52,7 +88,60 @@ impl Manager {
         &self.env
     }
 
-    /// Add (install) skills from a source. Returns discovered + installed + failed.
+    /// Add (install) skills from a source.
+    ///
+    /// Parses the source, discovers its skills, resolves the target agents, installs
+    /// each selected skill for each agent, and records successful installs in the
+    /// lockfile. Returns a structured [`AddOutcome`] with discovered, selected,
+    /// installed, and failed skills.
+    ///
+    /// # Selection defaults
+    ///
+    /// - `skills` empty → all discovered skills; a `"*"` entry → all as well.
+    /// - `agents` empty → auto-detect installed agents (plus the universal agent);
+    ///   a `"*"` entry → every known agent.
+    /// - `list_only` → discover and report, without installing anything.
+    /// - `copy` → copy files instead of symlinking (see [`InstallMode`]).
+    ///
+    /// # Examples
+    ///
+    /// Install a local skill into a scratch environment (hermetic — no network, no
+    /// real home access):
+    ///
+    /// ```
+    /// use agent_skill::{AddRequest, Manager};
+    ///
+    /// let tmp = tempfile::TempDir::new().unwrap();
+    /// let src = tmp.path().join("hello");
+    /// std::fs::create_dir_all(&src).unwrap();
+    /// std::fs::write(
+    ///     src.join("SKILL.md"),
+    ///     "---\nname: hello\ndescription: says hello\n---\n\n# hello\n",
+    /// )
+    /// .unwrap();
+    ///
+    /// let manager = Manager::builder()
+    ///     .home(tmp.path().join("home"))
+    ///     .config(tmp.path().join("config"))
+    ///     .cwd(tmp.path().join("project"))
+    ///     .build();
+    ///
+    /// let outcome = manager.add(&AddRequest {
+    ///     source: src.display().to_string(),
+    ///     agents: vec!["*".to_string()],
+    ///     ..Default::default()
+    /// })?;
+    /// assert!(!outcome.installed.is_empty());
+    /// # Ok::<(), agent_skill::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// - [`SkillsError::Message`] when the source is invalid, unreadable, or contains
+    ///   no valid skill (a `SKILL.md` with `name` and `description`).
+    /// - [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
+    /// - [`SkillsError::Git`], [`SkillsError::Http`], [`SkillsError::Io`],
+    ///   [`SkillsError::Zip`], etc. for transport and filesystem failures.
     pub fn add(&self, req: &AddRequest) -> Result<AddOutcome> {
         let parsed = parse_source(&req.source)?;
         let include_internal = !req.skills.is_empty();
@@ -198,7 +287,51 @@ impl Manager {
         })
     }
 
-    /// List installed skills (project/global), enriched with lock metadata.
+    /// Convenience: install every skill from `source` with default options.
+    ///
+    /// Equivalent to [`Manager::add`] with an [`AddRequest`] containing only a `source`
+    /// (and therefore default selection, agent auto-detection, and symlink mode).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use agent_skill::Manager;
+    ///
+    /// let manager = Manager::new();
+    /// // `add_source` with a bad source yields a structured error (no panic).
+    /// let result = manager.add_source("./does-not-exist");
+    /// assert!(result.is_err());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Manager::add`]: see its `# Errors` section.
+    pub fn add_source(&self, source: impl Into<String>) -> Result<AddOutcome> {
+        self.add(&AddRequest::new(source))
+    }
+
+    /// List installed skills (project or global), enriched with lock metadata.
+    ///
+    /// Scans the canonical skills directory and joins each entry with its lockfile
+    /// record, producing serde-serializable [`ListedSkill`] values — the same shape
+    /// emitted by `list --json`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use agent_skill::{ListRequest, Manager};
+    ///
+    /// let manager = Manager::new();
+    /// let skills = manager.list(&ListRequest::default())?;
+    /// for skill in skills {
+    ///     println!("{} -> {}", skill.name, skill.path.display());
+    /// }
+    /// # Ok::<(), agent_skill::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
     pub fn list(&self, req: &ListRequest) -> Result<Vec<ListedSkill>> {
         let invalid: Vec<String> = req
             .agents
@@ -229,6 +362,42 @@ impl Manager {
     }
 
     /// Remove installed skills.
+    ///
+    /// Deletes each skill's per-agent install directory (including legacy locations
+    /// and ghost symlinks), removes the canonical directory once no agent still uses
+    /// it, and drops the entry from the lockfile.
+    ///
+    /// # Selection semantics
+    ///
+    /// - `skills` empty and `all` false → nothing is removed; the outcome reports the
+    ///   currently installed names (used by the CLI to print a hint).
+    /// - `all` true → every installed skill plus every lockfile key.
+    /// - `agents` empty → all agents (so ghost symlinks are cleaned too).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use agent_skill::{Manager, RemoveRequest};
+    ///
+    /// let tmp = tempfile::TempDir::new().unwrap();
+    /// let manager = Manager::builder()
+    ///     .home(tmp.path().join("home"))
+    ///     .cwd(tmp.path().join("project"))
+    ///     .build();
+    ///
+    /// let req = RemoveRequest {
+    ///     skills: vec!["pdf".to_string()],
+    ///     ..Default::default()
+    /// };
+    /// // Nothing installed in the scratch dir, so this is a harmless no-op.
+    /// let outcome = manager.remove(&req)?;
+    /// assert!(outcome.removed.is_empty());
+    /// # Ok::<(), agent_skill::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
     pub fn remove(&self, req: &RemoveRequest) -> Result<RemoveOutcome> {
         let global = req.global;
 
@@ -257,14 +426,11 @@ impl Manager {
         // Resolve the skill names to remove (lock keys take priority, then on-disk dir names).
         let lock = read_local_lock(&lock_path(&self.env, global));
         let lock_keys: Vec<String> = lock.skills.keys().cloned().collect();
-        let mut requested: Vec<String> = if req.all {
+        let requested: Vec<String> = if req.all {
             installed.iter().chain(lock_keys.iter()).cloned().collect()
         } else {
             req.skills.clone()
         };
-        if !req.skill.is_empty() {
-            requested.extend(req.skill.iter().cloned());
-        }
         if requested.is_empty() {
             return Ok(RemoveOutcome {
                 installed,
@@ -344,6 +510,38 @@ impl Manager {
     }
 
     /// Update installed skills from their recorded (non-local) sources.
+    ///
+    /// Reads the lockfile, re-clones each recorded source once (skills sharing a source
+    /// are grouped), re-installs the latest version for the auto-detected agents, and
+    /// reports per-skill success/failure counts. Locally-sourced skills are skipped.
+    ///
+    /// # Scope resolution
+    ///
+    /// [`UpdateRequest::scope`] is [`Scope::Auto`] by default: project scope if the
+    /// project has skills or a lockfile, otherwise global.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use agent_skill::{Manager, UpdateRequest};
+    ///
+    /// let tmp = tempfile::TempDir::new().unwrap();
+    /// let manager = Manager::builder()
+    ///     .home(tmp.path().join("home"))
+    ///     .cwd(tmp.path().join("project"))
+    ///     .build();
+    ///
+    /// // No lockfile in the scratch dir, so nothing to update.
+    /// let outcome = manager.update(&UpdateRequest::default())?;
+    /// assert_eq!(outcome.updated, 0);
+    /// # Ok::<(), agent_skill::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`SkillsError::Message`] when a recorded source fails to re-parse. Per-skill
+    /// clone/install failures are captured in [`UpdateOutcome::failures`] rather than
+    /// returned as errors.
     pub fn update(&self, req: &UpdateRequest) -> Result<UpdateOutcome> {
         let global = resolve_scope(req, &self.env);
         let lock_path = lock_path(&self.env, global);
@@ -430,6 +628,10 @@ impl Manager {
 }
 
 /// Chained builder for [`Manager`], injecting home/config/cwd/env vars.
+///
+/// Every field is optional: unset fields fall back to the real environment at
+/// [`build`](Self::build) time, so tests and sandboxes can override just the pieces
+/// they care about.
 #[derive(Default)]
 pub struct ManagerBuilder {
     home: Option<PathBuf>,
@@ -440,30 +642,43 @@ pub struct ManagerBuilder {
 
 impl ManagerBuilder {
     /// Override the home directory.
+    ///
+    /// Affects global skills (`~/.agents/skills`), the global lockfile, and per-agent
+    /// user-level skills directories.
     pub fn home(mut self, p: impl Into<PathBuf>) -> Self {
         self.home = Some(p.into());
         self
     }
 
     /// Override the config directory.
+    ///
+    /// Affects agent config lookup (e.g. `CLAUDE_CONFIG_DIR` resolution).
     pub fn config(mut self, p: impl Into<PathBuf>) -> Self {
         self.config = Some(p.into());
         self
     }
 
     /// Override the current working directory.
+    ///
+    /// Affects project-scope installs (`.agents/skills`), the project lockfile, and
+    /// scope auto-detection.
     pub fn cwd(mut self, p: impl Into<PathBuf>) -> Self {
         self.cwd = Some(p.into());
         self
     }
 
     /// Inject an environment variable override.
+    ///
+    /// Useful for redirecting agent-specific env vars (e.g. `CLAUDE_CONFIG_DIR`) that
+    /// the agent directory mapping consults. Does not touch the real process env.
     pub fn env_var(mut self, k: impl Into<String>, v: impl Into<String>) -> Self {
         self.vars.insert(k.into(), v.into());
         self
     }
 
     /// Build the [`Manager`], resolving defaults from the real environment.
+    ///
+    /// Unset fields fall back to the actual home/config/cwd of the process.
     pub fn build(self) -> Manager {
         let cwd = self
             .cwd
@@ -484,62 +699,113 @@ impl ManagerBuilder {
 // ============================ Request types (clap-free) ============================
 
 /// Request for [`Manager::add`].
+///
+/// The struct is `Default + Clone`; use [`AddRequest::new`] for the common
+/// "install everything from a source" case and struct-update syntax
+/// (`..Default::default()`) to override just the fields you need.
+///
+/// See the crate-level [source formats](crate#source-formats) table for the accepted
+/// `source` strings.
 #[derive(Debug, Clone, Default)]
 pub struct AddRequest {
     /// Source string (local path, GitHub `owner/repo`, git URL, or download URL).
     pub source: String,
-    /// Install globally instead of into the project.
+    /// Install globally (user-level, `~/.agents/skills`) instead of project-level.
     pub global: bool,
-    /// "*" or specific agent names; empty = auto-detect.
+    /// `"*"` or specific agent names; empty = auto-detect installed agents.
     pub agents: Vec<String>,
-    /// "*" or specific skill names; empty = all.
+    /// `"*"` or specific skill names; empty = all discovered skills.
     pub skills: Vec<String>,
-    /// List available skills without installing.
+    /// List available skills without installing anything.
     pub list_only: bool,
     /// Copy files instead of symlinking.
     pub copy: bool,
-    /// Recurse into nested skill directories.
+    /// Recurse into nested skill directories beyond the default container depth.
     pub full_depth: bool,
 }
 
+impl AddRequest {
+    /// Create a request that installs all skills from `source` with default options.
+    ///
+    /// All other fields default: project scope, auto-detected agents, all skills,
+    /// symlink mode.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use agent_skill::{AddRequest, Manager};
+    ///
+    /// let req = AddRequest::new("anthropics/skills");
+    /// assert_eq!(req.source, "anthropics/skills");
+    /// assert!(req.agents.is_empty()); // auto-detect at install time
+    /// # let _ = Manager::new();
+    /// ```
+    pub fn new(source: impl Into<String>) -> Self {
+        AddRequest {
+            source: source.into(),
+            ..Default::default()
+        }
+    }
+}
+
 /// Request for [`Manager::list`].
+///
+/// `Default` lists project-scope skills across all agents.
 #[derive(Debug, Clone, Default)]
 pub struct ListRequest {
     /// List global skills instead of project skills.
     pub global: bool,
-    /// Filter by agent names; empty = all.
+    /// Filter by agent names; empty = all agents.
     pub agents: Vec<String>,
 }
 
 /// Request for [`Manager::remove`].
+///
+/// `Default` is a no-op that only reports installed names — set `skills` or `all` to
+/// actually remove anything.
 #[derive(Debug, Clone, Default)]
 pub struct RemoveRequest {
-    /// Positional skill names.
+    /// Skill names to remove (the CLI merges positional args and `--skill` here).
     pub skills: Vec<String>,
-    /// `--skill` names.
-    pub skill: Vec<String>,
     /// Remove global skills instead of project skills.
     pub global: bool,
-    /// Restrict removal to specific agents.
+    /// Restrict removal to specific agents; empty = all (cleans ghost symlinks).
     pub agents: Vec<String>,
     /// Remove all installed skills.
     pub all: bool,
 }
 
+/// Installation scope for [`Manager::update`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Scope {
+    /// Auto-detect: project scope if the project has skills or a lockfile, otherwise
+    /// global.
+    #[default]
+    Auto,
+    /// Force global scope.
+    Global,
+    /// Force project scope.
+    Project,
+}
+
 /// Request for [`Manager::update`].
+///
+/// `Default` updates all skills with auto-detected scope.
 #[derive(Debug, Clone, Default)]
 pub struct UpdateRequest {
     /// Filter by skill names; empty = all.
     pub skills: Vec<String>,
-    /// Force global scope.
-    pub global: bool,
-    /// Force project scope.
-    pub project: bool,
+    /// Installation scope ([`Scope::Auto`] by default).
+    pub scope: Scope,
 }
 
 // ============================ Outcome types ============================
 
 /// Result of [`Manager::add`].
+///
+/// Carries the full picture of an add operation: what was discovered, what was
+/// selected, which agents were targeted, and which (skill × agent) pairs succeeded
+/// or failed.
 #[derive(Debug)]
 pub struct AddOutcome {
     /// The parsed source.
@@ -565,7 +831,7 @@ pub struct InstallSuccess {
     pub name: String,
     /// Agent display name.
     pub agent: String,
-    /// Canonical directory (None in copy mode).
+    /// Canonical directory (`None` in copy mode).
     pub canonical_path: Option<PathBuf>,
 }
 
@@ -581,6 +847,9 @@ pub struct InstallFailure {
 }
 
 /// A listed skill enriched with lock metadata (serialized by `list --json`).
+///
+/// Fields are serialized in camelCase, so `source_url` becomes `"sourceUrl"` — the
+/// exact JSON shape emitted by the CLI's `list --json`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListedSkill {
@@ -616,13 +885,13 @@ pub struct RemoveOutcome {
 pub struct UpdateOutcome {
     /// Whether the update used global scope.
     pub global: bool,
-    /// Number of successful updates.
+    /// Number of successful updates (one count per skill × agent).
     pub updated: usize,
     /// Number of failed updates.
     pub failed: usize,
     /// Names of skills that were updated.
     pub updated_names: Vec<String>,
-    /// Failure messages.
+    /// Human-readable failure messages.
     pub failures: Vec<String>,
 }
 
@@ -667,13 +936,10 @@ fn write_lock(
 }
 
 fn resolve_scope(req: &UpdateRequest, env: &Env) -> bool {
-    if req.global && !req.project {
-        return true;
-    }
-    if req.project || has_project_skills(env) {
-        false
-    } else {
-        true
+    match req.scope {
+        Scope::Global => true,
+        Scope::Project => false,
+        Scope::Auto => !has_project_skills(env),
     }
 }
 

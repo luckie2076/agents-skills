@@ -32,10 +32,10 @@ pub fn clone_repo(url: &str, reference: Option<&str>) -> Result<tempfile::TempDi
     }
 
     // After a shallow clone the branch may not be explicitly checked out; ensure the working tree is usable.
-    if let Ok(repo) = git2::Repository::open(tmp.path()) {
-        if let Some(r) = reference {
-            let _ = checkout_ref(&repo, r);
-        }
+    if let Ok(repo) = git2::Repository::open(tmp.path())
+        && let Some(r) = reference
+    {
+        let _ = checkout_ref(&repo, r);
     }
     Ok(tmp)
 }
@@ -98,10 +98,12 @@ fn is_archive(url: &str, file: &Path) -> bool {
         return true;
     }
     // Fallback: sniff the zip magic bytes from content.
-    if let Ok(bytes) = std::fs::read(file).map(|b| b) {
-        if bytes.len() >= 2 && bytes[0] == b'P' && bytes[1] == b'K' {
-            return true;
-        }
+    if let Ok(bytes) = std::fs::read(file)
+        && bytes.len() >= 2
+        && bytes[0] == b'P'
+        && bytes[1] == b'K'
+    {
+        return true;
     }
     false
 }

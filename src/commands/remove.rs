@@ -7,8 +7,12 @@ use agent_skill::{Manager, RemoveOutcome, RemoveRequest};
 
 pub fn run(manager: &Manager, args: RemoveArgs) -> Result<()> {
     let req = RemoveRequest {
-        skills: args.skills.clone(),
-        skill: args.skill.clone(),
+        skills: args
+            .skills
+            .iter()
+            .chain(args.skill.iter())
+            .cloned()
+            .collect(),
         global: args.global,
         agents: args.agent.clone(),
         all: args.all,
