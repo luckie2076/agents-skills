@@ -18,6 +18,6 @@ jobs:
         run: cargo package --allow-dirty
 
       - name: Publish
-        run: cargo publish
+        run: cargo publish --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

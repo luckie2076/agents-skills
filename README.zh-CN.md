@@ -64,9 +64,6 @@ agents-skills add anthropics/skills
 
 # 仅安装仓库中的指定技能
 agents-skills add anthropics/skills@pdf
-
-# 安装后运行 link 即可让 agent 可见
-agents-skills link
 ```
 
 ### 列出技能（list）
@@ -105,14 +102,14 @@ agents-skills update
 
 `add` 的 `<source>` 参数支持：
 
-| 格式                | 示例                                                      |
-| ------------------- | --------------------------------------------------------- |
-| 本地路径            | `./my-skill`, `/abs/path/skill`                           |
-| GitHub 简写         | `owner/repo`, `owner/repo@skill`, `owner/repo/subpath`    |
+| 格式                | 示例                                                             |
+| ------------------- | ---------------------------------------------------------------- |
+| 本地路径            | `./my-skill`, `/abs/path/skill`                                  |
+| GitHub 简写         | `owner/repo`, `owner/repo@skill`, `owner/repo/subpath`           |
 | GitHub / GitLab URL | `https://github.com/owner/repo`, `https://gitlab.com/group/repo` |
-| SSH / git URL       | `git@github.com:owner/repo.git`                           |
-| HTTPS（well-known） | `https://example.com/skills`（发现 → 下载兜底）           |
-| HTTPS（下载）       | `.../skill.zip`, `.../skill.tar.gz`, 原始 `SKILL.md`      |
+| SSH / git URL       | `git@github.com:owner/repo.git`                                  |
+| HTTPS（well-known） | `https://example.com/skills`（发现 → 下载兜底）                  |
+| HTTPS（下载）       | `.../skill.zip`, `.../skill.tar.gz`, 原始 `SKILL.md`             |
 
 仓库内按优先级容器目录发现技能（`skills/`、`.curated/`、`.experimental/`、
 `.system/`），浅层遮蔽深层。

@@ -6,7 +6,7 @@ use predicates::prelude::*;
 
 use common::TestProject;
 
-const VERSION: &str = "0.1.0";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[test]
 fn version_prints_pure_semver() {
