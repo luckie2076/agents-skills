@@ -41,23 +41,6 @@ pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
         print_skill(skill, manager.env());
     }
     println!();
-
-    // Agent link status.
-    let statuses = manager.link_status(args.global);
-    if !statuses.is_empty() {
-        println!("{BOLD}Agents{RESET}");
-        for s in &statuses {
-            if s.linked {
-                println!("  {DIM}•{RESET} {} {DIM}(canonical dir){RESET}", s.display);
-            } else {
-                println!(
-                    "  {YELLOW}!{RESET} {} {DIM}(not linked — run `agents-skills link`){RESET}",
-                    s.display
-                );
-            }
-        }
-        println!();
-    }
     Ok(())
 }
 

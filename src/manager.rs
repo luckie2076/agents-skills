@@ -332,18 +332,17 @@ impl Manager {
         })
     }
 
-    /// Link status of every agent present in this scope.
+    /// Link status of every installed agent in this scope.
     ///
-    /// An agent is "present" when it is detected as installed, already linked, or
-    /// universal (the canonical dir is its own skills dir). Universal agents always
-    /// report `linked: true`.
+    /// Only agents detected as installed locally (or already linked) are reported.
+    /// Universal agents have no link concept (the canonical dir is their own skills
+    /// dir), so they are excluded here; their skills visibility is shown by `list`.
     pub fn link_status(&self, global: bool) -> Vec<LinkStatus> {
         AGENTS
             .iter()
             .filter(|a| {
-                a.is_universal()
-                    || is_installed(a, &self.env)
-                    || is_agent_linked(a, global, &self.env)
+                !a.is_universal()
+                    && (is_installed(a, &self.env) || is_agent_linked(a, global, &self.env))
             })
             .map(|a| LinkStatus {
                 name: a.name.to_string(),

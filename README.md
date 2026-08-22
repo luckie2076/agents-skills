@@ -25,8 +25,11 @@ agents-skills link
 # 2. 安装技能包（装进规范目录后，所有 agent 立即可见）
 agents-skills add anthropics/skills
 
-# 查看已安装技能与链接状态
+# 查看已安装技能
 agents-skills list
+
+# 查看各 agent 的链接状态
+agents-skills link --status
 ```
 
 核心是 `link`：技能只在规范目录保存一份（项目级 `.agents/skills/` 或全局级
@@ -36,18 +39,20 @@ agent 立即可见，无需任何同步。
 
 ## 功能说明
 
-### 核心：让 Agent 可见（link / unlink）
+### 核心：让 Agent 可见（link）
 
 本质：技能只在规范目录保存一份真实副本；`link` 为每个 agent 在其技能目录创建
 指向规范目录的符号链接（如 `.claude/skills` → `../.agents/skills`），使 70+ 编程
 Agent 共享同一份技能，安装一次、处处可见。这是本项目最核心的能力：`add`/`remove`/
-`update` 只操作规范目录，其余 agent 通过链接自动同步。
+`update` 只操作规范目录，其余 agent 通过链接自动同步。`link` 一个命令负责
+链接、查询状态与解除链接三种操作：
 
 ```bash
 agents-skills link                           # 自动链接本机已安装的所有 agent
 agents-skills link claude-code               # 只链接指定 agent
 agents-skills link claude-code --migrate     # 链接并迁移存量技能
-agents-skills unlink claude-code             # 解除链接
+agents-skills link --status                  # 查看各 agent 的链接状态
+agents-skills link --unlink claude-code      # 解除链接
 ```
 
 ### 安装技能（add）
@@ -66,7 +71,8 @@ agents-skills add anthropics/skills@pdf
 
 ### 列出技能（list）
 
-本质：扫描规范目录，读取已安装技能与各 agent 的链接状态。
+本质：扫描规范目录，读取已安装技能（每个技能下显示可见 agents）。各 agent 的
+链接状态由 `link --status` 查询。
 
 ```bash
 agents-skills list             # 项目级
@@ -122,14 +128,13 @@ agents-skills update
 
 ### 命令速查表
 
-| 命令     | 别名                | 说明                            |
-| -------- | ------------------- | ------------------------------- |
-| `add`    | `a`, `i`, `install` | 从来源安装技能包                |
-| `remove` | `rm`, `r`           | 移除已安装技能                  |
-| `list`   | `ls`                | 列出已安装技能与 agent 链接     |
-| `update` | `upgrade`, `check`  | 将技能更新到最新版本            |
-| `link`   | `ln`                | 将 agent 技能目录链接到规范目录 |
-| `unlink` | `un`                | 解除 agent 与规范目录的链接     |
+| 命令     | 别名                | 说明                                |
+| -------- | ------------------- | ----------------------------------- |
+| `add`    | `a`, `i`, `install` | 从来源安装技能包                    |
+| `remove` | `rm`, `r`           | 移除已安装技能                      |
+| `list`   | `ls`                | 列出已安装技能                      |
+| `update` | `upgrade`, `check`  | 将技能更新到最新版本                |
+| `link`   | `ln`                | 链接/解除链接/查看 agent 链接状态   |
 
 > 完整的命令行参数（每个命令的选项与更多示例）见 [docs/CLI.md](docs/CLI.md)。
 
@@ -157,8 +162,7 @@ src/
     ├── remove.rs
     ├── list.rs
     ├── update.rs
-    ├── link.rs
-    └── unlink.rs
+    └── link.rs
 
 examples/
 ├── add_skill.rs        通过 Manager 门面安装技能（真实用法）

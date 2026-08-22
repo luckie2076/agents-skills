@@ -16,14 +16,13 @@ cargo install agents-skills
 
 ## 命令速查表
 
-| 命令     | 别名                  | 说明                            |
-| -------- | --------------------- | ------------------------------- |
-| `add`    | `a`, `i`, `install`   | 从来源安装技能包                |
-| `remove` | `rm`, `r`             | 移除已安装技能                  |
-| `list`   | `ls`                  | 列出已安装技能与 agent 链接     |
-| `update` | `upgrade`, `check`    | 将技能更新到最新版本            |
-| `link`   | `ln`                  | 将 agent 技能目录链接到规范目录 |
-| `unlink` | `un`                  | 解除 agent 与规范目录的链接     |
+| 命令     | 别名                  | 说明                              |
+| -------- | --------------------- | --------------------------------- |
+| `add`    | `a`, `i`, `install`   | 从来源安装技能包                  |
+| `remove` | `rm`, `r`             | 移除已安装技能                    |
+| `list`   | `ls`                  | 列出已安装技能                    |
+| `update` | `upgrade`, `check`    | 将技能更新到最新版本              |
+| `link`   | `ln`                  | 链接/解除链接/查看 agent 链接状态 |
 
 ## add
 
@@ -87,7 +86,8 @@ agents-skills remove --all
 
 ## list
 
-列出已安装技能与 agent 链接。
+列出已安装技能（每个技能下显示可见 agents）。各 agent 的链接状态由
+`link --status` 查询。
 
 ```
 agents-skills list [options]
@@ -136,17 +136,21 @@ agents-skills update pdf
 
 ## link
 
-将 agent 的技能目录链接到规范目录。
+管理 agent 技能目录与规范目录的链接关系：默认链接，`--status` 查看链接状态，
+`--unlink` 解除链接。
 
 ```
 agents-skills link [agents...] [options]
 ```
 
-| 选项            | 说明                                       |
-| --------------- | ------------------------------------------ |
-| `-g, --global`  | 链接全局技能目录而非项目目录               |
-| `--migrate`     | 把 Agent 目录中的存量技能移入规范目录      |
+| 选项             | 说明                                             |
+| ---------------- | ------------------------------------------------ |
+| `-g, --global`   | 链接全局技能目录而非项目目录                     |
+| `--status`       | 显示已安装 agent 的链接状态（不修改任何内容）    |
+| `--unlink`       | 解除 agent 与规范目录的链接                      |
+| `--migrate`      | 把 Agent 目录中的存量技能移入规范目录            |
 
+`--status` 与 `--unlink` 互斥；`--migrate` 仅对默认链接行为有效。
 Agent 默认为自动探测的已安装 agent；`'*'` 表示全部。
 
 示例：
@@ -157,30 +161,12 @@ agents-skills link
 
 # 链接指定 agent，并迁移其存量技能
 agents-skills link claude-code --migrate
-```
 
-## unlink
-
-解除 agent 与规范目录的链接。
-
-```
-agents-skills unlink [agents...] [options]
-```
-
-| 选项           | 说明                         |
-| -------------- | ---------------------------- |
-| `-g, --global` | 解除全局技能目录链接         |
-
-Agent 默认为自动探测的已安装 agent；`'*'` 表示全部。
-
-示例：
-
-```bash
-# 解除全部已安装 agent 的链接
-agents-skills unlink
+# 查看各 agent 的链接状态
+agents-skills link --status
 
 # 解除指定 agent 的链接
-agents-skills unlink claude-code
+agents-skills link --unlink claude-code
 ```
 
 ## 相关概念

@@ -38,9 +38,6 @@ pub enum Command {
     /// Link agents' skills dirs to the canonical dir (alias: ln)
     #[command(alias = "ln")]
     Link(LinkArgs),
-    /// Unlink agents' skills dirs from the canonical dir (alias: un)
-    #[command(alias = "un")]
-    Unlink(UnlinkArgs),
 }
 
 #[derive(Debug, Args)]
@@ -118,22 +115,19 @@ pub struct LinkArgs {
     /// Link global skills dirs instead of project ones
     #[arg(short = 'g', long = "global")]
     pub global: bool,
+    /// Show link status of installed agents (does not modify anything)
+    #[arg(long = "status", conflicts_with = "unlink")]
+    pub status: bool,
+    /// Unlink agents' skills dirs from the canonical dir
+    #[arg(long = "unlink", conflicts_with = "status")]
+    pub unlink: bool,
     /// Migrate existing agent skills dirs into the canonical dir
-    #[arg(long = "migrate")]
+    #[arg(long = "migrate", conflicts_with_all = ["status", "unlink"])]
     pub migrate: bool,
 }
 
-#[derive(Debug, Args)]
-pub struct UnlinkArgs {
-    /// Agents to unlink (default: auto-detect installed agents; use '*' for all)
-    pub agents: Vec<String>,
-    /// Unlink global skills dirs instead of project ones
-    #[arg(short = 'g', long = "global")]
-    pub global: bool,
-}
-
 // ============================================================================
-// Banner / ASCII logo.
+// Banner.
 // ============================================================================
 
 pub const RESET: &str = "\x1b[0m";
@@ -146,36 +140,10 @@ pub const GREEN: &str = "\x1b[32m";
 pub const YELLOW: &str = "\x1b[33m";
 pub const RED: &str = "\x1b[31m";
 
-const LOGO_LINES: [&str; 6] = [
-    "███████╗██╗  ██╗██╗██╗     ██╗     ███████╗",
-    "██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝",
-    "███████╗█████╔╝ ██║██║     ██║     ███████╗",
-    "╚════██║██╔═██╗ ██║██║     ██║     ╚════██║",
-    "███████║██║  ██╗██║███████╗███████╗███████║",
-    "╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝",
-];
-
-const LOGO_GRAYS: [&str; 6] = [
-    "\x1b[38;5;250m",
-    "\x1b[38;5;248m",
-    "\x1b[38;5;245m",
-    "\x1b[38;5;243m",
-    "\x1b[38;5;240m",
-    "\x1b[38;5;238m",
-];
-
-pub fn show_logo() {
-    println!();
-    for (line, gray) in LOGO_LINES.iter().zip(LOGO_GRAYS.iter()) {
-        println!("{gray}{line}{RESET}");
-    }
-}
-
 /// Banner printed when no args are given (experimental commands removed).
 pub fn show_banner() {
-    show_logo();
     println!();
-    println!("{DIM}Agent skill installer and manager{RESET}");
+    println!("{DIM}Agents skills installer and manager{RESET}");
     println!();
     println!(
         "  {DIM}${RESET} {TEXT}agents-skills add {DIM}<package>{RESET}        {DIM}Add a new skill{RESET}"
@@ -195,7 +163,10 @@ pub fn show_banner() {
         "  {DIM}${RESET} {TEXT}agents-skills link{RESET}                 {DIM}Link agents to the skills dir{RESET}"
     );
     println!(
-        "  {DIM}${RESET} {TEXT}agents-skills unlink{RESET}               {DIM}Unlink agents{RESET}"
+        "  {DIM}${RESET} {TEXT}agents-skills link --status{RESET}        {DIM}Show agent link status{RESET}"
+    );
+    println!(
+        "  {DIM}${RESET} {TEXT}agents-skills link --unlink{RESET}        {DIM}Unlink agents{RESET}"
     );
     println!();
     println!("{DIM}try:{RESET} agents-skills add anthropics/skills");

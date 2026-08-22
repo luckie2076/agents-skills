@@ -1,4 +1,4 @@
-//! End-to-end tests for the `link` / `unlink` commands and the directory-link model.
+//! End-to-end tests for the `link` command (link / --status / --unlink) and the directory-link model.
 
 mod common;
 
@@ -55,7 +55,7 @@ fn unlink_restores_real_dir() {
     p.skills().args(["link", "claude-code"]).assert().success();
 
     p.skills()
-        .args(["unlink", "claude-code"])
+        .args(["link", "--unlink", "claude-code"])
         .assert()
         .success()
         .stdout(predicate::str::contains("unlinked"));
@@ -63,6 +63,53 @@ fn unlink_restores_real_dir() {
     let dir = p.path().join(".claude/skills");
     assert!(dir.is_dir());
     assert!(!dir.is_symlink());
+}
+
+#[test]
+fn link_status_prints_installed_agents_and_link_state() {
+    let p = TestProject::new();
+    p.skills().args(["link", "claude-code"]).assert().success();
+
+    // CodeBuddy is detected via `.codebuddy` in the cwd: installed but not linked.
+    std::fs::create_dir_all(p.path().join(".codebuddy")).unwrap();
+
+    p.skills()
+        .args(["link", "--status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Agent link status"))
+        .stdout(predicate::str::contains("Claude Code"))
+        .stdout(predicate::str::contains("canonical dir"))
+        .stdout(predicate::str::contains("CodeBuddy"))
+        .stdout(predicate::str::contains(
+            "not linked) — run `agents-skills link codebuddy`",
+        ));
+}
+
+#[test]
+fn link_status_conflicts_with_unlink_and_migrate() {
+    let p = TestProject::new();
+
+    p.skills()
+        .args(["link", "--status", "--unlink"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("cannot be used with"));
+
+    p.skills()
+        .args(["link", "--status", "--migrate"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("cannot be used with"));
+
+    p.skills()
+        .args(["link", "--unlink", "--migrate"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("cannot be used with"));
 }
 
 #[test]
