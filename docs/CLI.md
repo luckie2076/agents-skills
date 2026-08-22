@@ -1,6 +1,6 @@
 # agents-skills 命令行参考
 
-`agents-skills` CLI 的完整命令参考。功能概览与快速上手见 [README](../README.zh-CN.md)。
+`agents-skills` CLI 的完整命令参考。功能概览与快速上手见 [README](../README.md)。
 
 ## 安装
 
@@ -86,7 +86,7 @@ agents-skills remove --all
 
 ## list
 
-列出已安装技能（每个技能下显示可见 agents）。各 agent 的链接状态由
+列出已安装技能（技能名、规范目录路径、来源）。各 agent 的链接状态由
 `link --status` 查询。
 
 ```
@@ -150,6 +150,8 @@ agents-skills link [agents...] [options]
 | `--unlink`       | 解除 agent 与规范目录的链接                      |
 | `--migrate`      | 把 Agent 目录中的存量技能移入规范目录            |
 
+`--status` 区分两种"可见"状态：原生读取规范目录的 agent（如 Codex、Cursor、
+Warp）标记为 `(canonical dir)`；通过符号链接接入的 agent 标记为 `(linked)`。
 `--status` 与 `--unlink` 互斥；`--migrate` 仅对默认链接行为有效。
 Agent 默认为自动探测的已安装 agent；`'*'` 表示全部。
 
@@ -171,4 +173,4 @@ agents-skills link --unlink claude-code
 
 ## 相关概念
 
-- 来源格式与安装位置见 [README · 功能说明](../README.zh-CN.md#功能说明)。
+- 来源格式与安装位置见 [README · 功能说明](../README.md#功能说明)。
