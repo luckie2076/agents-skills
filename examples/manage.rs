@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use agent_skill::{AddRequest, ListRequest, Manager, RemoveRequest};
+use agents_skills::{AddRequest, ListRequest, Manager, RemoveRequest};
 
 /// Create a minimal skill directory on disk for the demo.
 fn write_skill(root: &Path, name: &str) -> std::path::PathBuf {
@@ -20,7 +20,7 @@ fn write_skill(root: &Path, name: &str) -> std::path::PathBuf {
     dir
 }
 
-fn main() -> agent_skill::Result<()> {
+fn main() -> agents_skills::Result<()> {
     let tmp = tempfile::TempDir::new()?;
     let project = tmp.path().join("project");
     std::fs::create_dir_all(&project)?;

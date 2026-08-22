@@ -2,9 +2,9 @@
 
 use crate::cli::{BOLD, CYAN, DIM, ListArgs, RESET, YELLOW};
 use crate::commands::fail_agents;
-use agent_skill::core::agents::Env;
-use agent_skill::error::Result;
-use agent_skill::{ListRequest, ListedSkill, Manager};
+use agents_skills::core::agents::Env;
+use agents_skills::error::Result;
+use agents_skills::{ListRequest, ListedSkill, Manager};
 
 pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
     let req = ListRequest {

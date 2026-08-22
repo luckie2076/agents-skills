@@ -2,7 +2,7 @@
 //!
 //! Symlink mode writes to the canonical dir first, then symlinks into each agent dir;
 //! copy mode writes directly to the agent dir. Copies skip metadata.json/.git/__pycache__/__pypackages__.
-//! Not supported: Eve sub-agents (`agent/subagents/<name>/skills`) and remote/blob installs.
+//! Not supported: remote/blob installs.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -196,22 +196,6 @@ pub fn install_skill_for_agent(
     global: bool,
     mode: InstallMode,
 ) -> InstallResult {
-    // global and the agent does not support global → fail.
-    if global && agent_base_dir(agent, true, env).is_none() {
-        return InstallResult {
-            success: false,
-            path: PathBuf::new(),
-            canonical_path: None,
-            mode,
-            symlink_failed: false,
-            skipped: false,
-            error: Some(format!(
-                "{} does not support global skill installation",
-                agent.display
-            )),
-        };
-    }
-
     let skill_name = sanitize_name(&skill.name);
     let canonical_base = canonical_skills_dir(global, env);
     let canonical_dir = canonical_base.join(&skill_name);
@@ -611,19 +595,6 @@ mod tests {
         assert!(r.success);
         assert!(r.canonical_path.is_some());
         assert!(tmp.path().join(".claude/skills/pdf").exists());
-    }
-
-    #[test]
-    fn install_global_unsupported_agent_fails() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let env = env_at(&tmp);
-        let src = tmp.path().join("src-skill");
-        let skill = write_skill(&src, "pdf");
-        let agent = get_agent("eve").unwrap(); // GlobalDir::None
-
-        let r = install_skill_for_agent(&skill, agent, &env, true, InstallMode::Symlink);
-        assert!(!r.success);
-        assert!(r.error.unwrap().contains("does not support global"));
     }
 
     #[test]

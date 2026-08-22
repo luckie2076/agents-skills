@@ -7,10 +7,10 @@ use std::path::Path;
 
 use crate::cli::{AddArgs, BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW};
 use crate::commands::fail_agents;
-use agent_skill::core::agents::Env;
-use agent_skill::core::source::{Source, SourceType};
-use agent_skill::error::Result;
-use agent_skill::{AddOutcome, AddRequest, Manager, SkillsError};
+use agents_skills::core::agents::Env;
+use agents_skills::core::source::{Source, SourceType};
+use agents_skills::error::Result;
+use agents_skills::{AddOutcome, AddRequest, Manager, SkillsError};
 
 pub fn run(manager: &Manager, args: AddArgs) -> Result<()> {
     let (skills, agents) = if args.all {

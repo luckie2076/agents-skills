@@ -1,16 +1,16 @@
-# agent-skill
+# agents-skills
 
-[![crates.io](https://img.shields.io/crates/v/agent-skill.svg)](https://crates.io/crates/agent-skill)
-[![docs.rs](https://img.shields.io/docsrs/agent-skill.svg)](https://docs.rs/agent-skill)
-[![CI](https://github.com/luckie2076/agent-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/luckie2076/agent-skill/actions)
+[![crates.io](https://img.shields.io/crates/v/agents-skills.svg)](https://crates.io/crates/agents-skills)
+[![docs.rs](https://img.shields.io/docsrs/agents-skills.svg)](https://docs.rs/agents-skills)
+[![CI](https://github.com/luckie2076/agents-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/luckie2076/agents-skills/actions)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 一个极简、稳定的 **Rust 库**，用于安装与管理 AI Agent 技能，并附带一个基于该库
 构建的命令行接口。
 
-`agent-skill` 是**库优先**的：把它引入你的 Rust 项目，即可为
+`agents-skills` 是**库优先**的：把它引入你的 Rust 项目，即可为
 [Claude Code](https://claude.com/code)、Codex、Cursor 等 70+ 编程 Agent 安装、列出、
-移除、更新 `SKILL.md` 包。同时附带一个小型 CLI（`agent-skill`），它只是同一套公开
+移除、更新 `SKILL.md` 包。同时附带一个小型 CLI（`agents-skills`），它只是同一套公开
 API 之上的薄渲染层。
 
 > 另见：[English README](README.md)
@@ -30,13 +30,13 @@ API 之上的薄渲染层。
 
 ```toml
 [dependencies]
-agent-skill = "1"
+agents-skills = "1"
 ```
 
 使用高层 [`Manager`] 门面安装并列出技能：
 
 ```rust
-use agent_skill::{AddRequest, ListRequest, Manager, Result};
+use agents_skills::{AddRequest, ListRequest, Manager, Result};
 
 fn main() -> Result<()> {
     let manager = Manager::new();
@@ -66,20 +66,20 @@ fn main() -> Result<()> {
 
 一站式操作。每个方法接收一个纯数据请求结构体，返回结构化结果。
 
-| 方法 | 请求 | 返回 |
-| ------ | ------- | ------- |
-| [`Manager::add`] | [`AddRequest`] | [`AddOutcome`]（已安装 + 失败） |
-| [`Manager::add_source`] | `impl Into<String>` | [`AddOutcome`]（已安装 + 失败） |
-| [`Manager::list`] | [`ListRequest`] | `Vec<`[`ListedSkill`]`>`（可序列化） |
-| [`Manager::remove`] | [`RemoveRequest`] | [`RemoveOutcome`]（已移除名称） |
-| [`Manager::update`] | [`UpdateRequest`] | [`UpdateOutcome`]（更新/失败计数） |
+| 方法                    | 请求                | 返回                                 |
+| ----------------------- | ------------------- | ------------------------------------ |
+| [`Manager::add`]        | [`AddRequest`]      | [`AddOutcome`]（已安装 + 失败）      |
+| [`Manager::add_source`] | `impl Into<String>` | [`AddOutcome`]（已安装 + 失败）      |
+| [`Manager::list`]       | [`ListRequest`]     | `Vec<`[`ListedSkill`]`>`（可序列化） |
+| [`Manager::remove`]     | [`RemoveRequest`]   | [`RemoveOutcome`]（已移除名称）      |
+| [`Manager::update`]     | [`UpdateRequest`]   | [`UpdateOutcome`]（更新/失败计数）   |
 
 请求结构体均为 `Default + Clone`，可通过字段覆盖进行构建；结果是纯数据。
 
 ### 上下文注入：[`ManagerBuilder`]
 
 ```rust
-use agent_skill::Manager;
+use agents_skills::Manager;
 
 let manager = Manager::builder()
     .home("/tmp/home")
@@ -128,15 +128,15 @@ cargo run --example add_skill   # 通过 Manager 安装到你的真实环境
 
 [`AddRequest`] 的 `source` 字段（以及 CLI 的 `<source>` 参数）支持：
 
-| 格式 | 示例 |
-| ------ | ------- |
-| 本地路径 | `./my-skill`, `/abs/path/skill` |
-| GitHub 简写 | `owner/repo`, `owner/repo@skill`, `owner/repo/subpath` |
-| GitHub URL | `https://github.com/owner/repo`, `.../tree/main/skills` |
-| GitLab URL | `https://gitlab.com/group/repo`, `.../-/tree/main/skills` |
-| SSH / git URL | `git@github.com:owner/repo.git` |
-| HTTPS（well-known） | `https://example.com/skills`（发现 → 下载兜底） |
-| HTTPS（下载） | `.../skill.zip`, `.../skill.tar.gz`, 原始 `SKILL.md` |
+| 格式                | 示例                                                      |
+| ------------------- | --------------------------------------------------------- |
+| 本地路径            | `./my-skill`, `/abs/path/skill`                           |
+| GitHub 简写         | `owner/repo`, `owner/repo@skill`, `owner/repo/subpath`    |
+| GitHub URL          | `https://github.com/owner/repo`, `.../tree/main/skills`   |
+| GitLab URL          | `https://gitlab.com/group/repo`, `.../-/tree/main/skills` |
+| SSH / git URL       | `git@github.com:owner/repo.git`                           |
+| HTTPS（well-known） | `https://example.com/skills`（发现 → 下载兜底）           |
+| HTTPS（下载）       | `.../skill.zip`, `.../skill.tar.gz`, 原始 `SKILL.md`      |
 
 ## 安装位置
 
@@ -151,32 +151,32 @@ cargo run --example add_skill   # 通过 Manager 安装到你的真实环境
 
 ```bash
 # 安装（从 crates.io）
-cargo install agent-skill
+cargo install agents-skills
 
 # 从 GitHub 仓库安装技能
-agent-skill add anthropics/skills
+agents-skills add anthropics/skills
 
 # 安装某个技能到指定 Agent
-agent-skill add anthropics/skills@pdf --agent claude-code
+agents-skills add anthropics/skills@pdf --agent claude-code
 
 # 以机器可读的 JSON 输出
-agent-skill list --json
+agents-skills list --json
 
 # 根据 lockfile 来源更新所有技能
-agent-skill update
+agents-skills update
 ```
 
-| 命令 | 别名 | 说明 |
-| ------- | ------- | ----------- |
-| `add` | `a`, `i`, `install` | 从来源安装技能包 |
-| `remove` | `rm`, `r` | 移除已安装技能 |
-| `list` | `ls` | 列出已安装技能 |
-| `update` | `upgrade`, `check` | 将技能更新到最新版本 |
+| 命令     | 别名                | 说明                 |
+| -------- | ------------------- | -------------------- |
+| `add`    | `a`, `i`, `install` | 从来源安装技能包     |
+| `remove` | `rm`, `r`           | 移除已安装技能       |
+| `list`   | `ls`                | 列出已安装技能       |
+| `update` | `upgrade`, `check`  | 将技能更新到最新版本 |
 
 ### `add`
 
 ```
-agent-skill add <source> [options]
+agents-skills add <source> [options]
 
 Options:
   -g, --global        全局（用户级）安装，而非项目级
@@ -192,7 +192,7 @@ Options:
 ### `remove`
 
 ```
-agent-skill remove [skills...] [options]
+agents-skills remove [skills...] [options]
 
 Options:
   -g, --global        从全局作用域而非项目作用域移除
@@ -205,7 +205,7 @@ Options:
 ### `list`
 
 ```
-agent-skill list [options]
+agents-skills list [options]
 
 Options:
   -g, --global        列出全局技能（默认：项目）
@@ -216,7 +216,7 @@ Options:
 ### `update`
 
 ```
-agent-skill update [skills...] [options]
+agents-skills update [skills...] [options]
 
 Options:
   -g, --global        仅更新全局技能
@@ -290,33 +290,33 @@ cargo fmt              # 格式化
 
 由你选择。
 
-[`Manager`]: https://docs.rs/agent-skill/latest/agent_skill/struct.Manager.html
-[`Manager::add`]: https://docs.rs/agent-skill/latest/agent_skill/struct.Manager.html#method.add
-[`Manager::add_source`]: https://docs.rs/agent-skill/latest/agent_skill/struct.Manager.html#method.add_source
-[`Manager::list`]: https://docs.rs/agent-skill/latest/agent_skill/struct.Manager.html#method.list
-[`Manager::remove`]: https://docs.rs/agent-skill/latest/agent_skill/struct.Manager.html#method.remove
-[`Manager::update`]: https://docs.rs/agent-skill/latest/agent_skill/struct.Manager.html#method.update
-[`ManagerBuilder`]: https://docs.rs/agent-skill/latest/agent_skill/struct.ManagerBuilder.html
-[`AddRequest`]: https://docs.rs/agent-skill/latest/agent_skill/struct.AddRequest.html
-[`AddOutcome`]: https://docs.rs/agent-skill/latest/agent_skill/struct.AddOutcome.html
-[`ListRequest`]: https://docs.rs/agent-skill/latest/agent_skill/struct.ListRequest.html
-[`ListedSkill`]: https://docs.rs/agent-skill/latest/agent_skill/struct.ListedSkill.html
-[`RemoveRequest`]: https://docs.rs/agent-skill/latest/agent_skill/struct.RemoveRequest.html
-[`RemoveOutcome`]: https://docs.rs/agent-skill/latest/agent_skill/struct.RemoveOutcome.html
-[`UpdateRequest`]: https://docs.rs/agent-skill/latest/agent_skill/struct.UpdateRequest.html
-[`UpdateOutcome`]: https://docs.rs/agent-skill/latest/agent_skill/struct.UpdateOutcome.html
-[`parse_source`]: https://docs.rs/agent-skill/latest/agent_skill/fn.parse_source.html
-[`owner_repo`]: https://docs.rs/agent-skill/latest/agent_skill/fn.owner_repo.html
-[`discover_skills`]: https://docs.rs/agent-skill/latest/agent_skill/fn.discover_skills.html
-[`filter_skills`]: https://docs.rs/agent-skill/latest/agent_skill/fn.filter_skills.html
-[`parse_skill_md`]: https://docs.rs/agent-skill/latest/agent_skill/fn.parse_skill_md.html
-[`install_skill_for_agent`]: https://docs.rs/agent-skill/latest/agent_skill/fn.install_skill_for_agent.html
-[`list_installed_skills`]: https://docs.rs/agent-skill/latest/agent_skill/fn.list_installed_skills.html
-[`sanitize_name`]: https://docs.rs/agent-skill/latest/agent_skill/fn.sanitize_name.html
-[`read_local_lock`]: https://docs.rs/agent-skill/latest/agent_skill/fn.read_local_lock.html
-[`write_local_lock`]: https://docs.rs/agent-skill/latest/agent_skill/fn.write_local_lock.html
-[`compute_folder_hash`]: https://docs.rs/agent-skill/latest/agent_skill/fn.compute_folder_hash.html
-[`get_agent`]: https://docs.rs/agent-skill/latest/agent_skill/fn.get_agent.html
-[`detect_installed_agents`]: https://docs.rs/agent-skill/latest/agent_skill/fn.detect_installed_agents.html
-[`Agent`]: https://docs.rs/agent-skill/latest/agent_skill/struct.Agent.html
-[`Env`]: https://docs.rs/agent-skill/latest/agent_skill/struct.Env.html
+[`Manager`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html
+[`Manager::add`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add
+[`Manager::add_source`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add_source
+[`Manager::list`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.list
+[`Manager::remove`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.remove
+[`Manager::update`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.update
+[`ManagerBuilder`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ManagerBuilder.html
+[`AddRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddRequest.html
+[`AddOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddOutcome.html
+[`ListRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListRequest.html
+[`ListedSkill`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListedSkill.html
+[`RemoveRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveRequest.html
+[`RemoveOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveOutcome.html
+[`UpdateRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UpdateRequest.html
+[`UpdateOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UpdateOutcome.html
+[`parse_source`]: https://docs.rs/agents-skills/latest/agents_skills/fn.parse_source.html
+[`owner_repo`]: https://docs.rs/agents-skills/latest/agents_skills/fn.owner_repo.html
+[`discover_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.discover_skills.html
+[`filter_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.filter_skills.html
+[`parse_skill_md`]: https://docs.rs/agents-skills/latest/agents_skills/fn.parse_skill_md.html
+[`install_skill_for_agent`]: https://docs.rs/agents-skills/latest/agents_skills/fn.install_skill_for_agent.html
+[`list_installed_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.list_installed_skills.html
+[`sanitize_name`]: https://docs.rs/agents-skills/latest/agents_skills/fn.sanitize_name.html
+[`read_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/fn.read_local_lock.html
+[`write_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/fn.write_local_lock.html
+[`compute_folder_hash`]: https://docs.rs/agents-skills/latest/agents_skills/fn.compute_folder_hash.html
+[`get_agent`]: https://docs.rs/agents-skills/latest/agents_skills/fn.get_agent.html
+[`detect_installed_agents`]: https://docs.rs/agents-skills/latest/agents_skills/fn.detect_installed_agents.html
+[`Agent`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Agent.html
+[`Env`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Env.html

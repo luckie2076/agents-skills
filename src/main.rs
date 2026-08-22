@@ -1,13 +1,13 @@
-//! agent-skill — a minimal, stable skill installer and manager for AI agents.
+//! agents-skills — a minimal, stable skill installer and manager for AI agents.
 //!
 //! Bin entry point: no args prints the banner; `-v/--version` prints a bare semver;
-//! otherwise dispatch by subcommand. All business logic lives in the `agent-skill` library.
+//! otherwise dispatch by subcommand. All business logic lives in the `agents-skills` library.
 
 mod cli;
 mod commands;
 
-use agent_skill::Manager;
-use agent_skill::error::Result;
+use agents_skills::Manager;
+use agents_skills::error::Result;
 use clap::Parser;
 use cli::{BOLD, Cli, Command, RESET};
 
@@ -25,7 +25,7 @@ fn main() {
             if e.kind() == clap::error::ErrorKind::InvalidSubcommand {
                 let cmd = std::env::args().nth(1).unwrap_or_default();
                 println!("Unknown command: {cmd}");
-                println!("Run {BOLD}agent-skill --help{RESET} for usage.");
+                println!("Run {BOLD}agents-skills --help{RESET} for usage.");
                 std::process::exit(1);
             }
             let code = if e.use_stderr() { 1 } else { 0 };

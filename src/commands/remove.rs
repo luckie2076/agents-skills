@@ -2,8 +2,8 @@
 
 use crate::cli::{BOLD, CYAN, DIM, GREEN, RED, RESET, RemoveArgs, YELLOW};
 use crate::commands::fail_agents;
-use agent_skill::error::Result;
-use agent_skill::{Manager, RemoveOutcome, RemoveRequest};
+use agents_skills::error::Result;
+use agents_skills::{Manager, RemoveOutcome, RemoveRequest};
 
 pub fn run(manager: &Manager, args: RemoveArgs) -> Result<()> {
     let req = RemoveRequest {
@@ -36,7 +36,7 @@ fn render(req: &RemoveRequest, outcome: &RemoveOutcome) {
                 println!("  {CYAN}{name}{RESET}");
             }
             println!();
-            println!("{DIM}Usage: agent-skill remove <name> [options]{RESET}");
+            println!("{DIM}Usage: agents-skills remove <name> [options]{RESET}");
             println!("{DIM}Options: -g/--global, -a/--agent, -s/--skill, --all, -y/--yes{RESET}");
         }
         return;

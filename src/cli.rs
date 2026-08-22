@@ -7,7 +7,7 @@ use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "agent-skill",
+    name = "agents-skills",
     about = "A minimal skill installer and manager for AI agents",
     long_about = None,
     disable_version_flag = true
@@ -163,19 +163,19 @@ pub fn show_banner() {
     println!("{DIM}Agent skill installer and manager{RESET}");
     println!();
     println!(
-        "  {DIM}${RESET} {TEXT}agent-skill add {DIM}<package>{RESET}        {DIM}Add a new skill{RESET}"
+        "  {DIM}${RESET} {TEXT}agents-skills add {DIM}<package>{RESET}        {DIM}Add a new skill{RESET}"
     );
     println!(
-        "  {DIM}${RESET} {TEXT}agent-skill remove{RESET}               {DIM}Remove installed skills{RESET}"
+        "  {DIM}${RESET} {TEXT}agents-skills remove{RESET}               {DIM}Remove installed skills{RESET}"
     );
     println!(
-        "  {DIM}${RESET} {TEXT}agent-skill list{RESET}                 {DIM}List installed skills{RESET}"
+        "  {DIM}${RESET} {TEXT}agents-skills list{RESET}                 {DIM}List installed skills{RESET}"
     );
     println!();
     println!(
-        "  {DIM}${RESET} {TEXT}agent-skill update{RESET}               {DIM}Update installed skills{RESET}"
+        "  {DIM}${RESET} {TEXT}agents-skills update{RESET}               {DIM}Update installed skills{RESET}"
     );
     println!();
-    println!("{DIM}try:{RESET} agent-skill add anthropics/skills");
+    println!("{DIM}try:{RESET} agents-skills add anthropics/skills");
     println!();
 }

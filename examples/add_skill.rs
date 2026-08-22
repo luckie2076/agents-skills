@@ -6,9 +6,9 @@
 //!
 //! Note: this installs into your real environment (project or global scope).
 
-use agent_skill::{AddRequest, Manager};
+use agents_skills::{AddRequest, Manager};
 
-fn main() -> agent_skill::Result<()> {
+fn main() -> agents_skills::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // First positional argument is the source; anything after `--agent` is a filter.

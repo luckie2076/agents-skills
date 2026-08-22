@@ -1,18 +1,18 @@
 # Choosing the right approach
 
-This guide explains the *recommended* way to use `agent-skill` for common scenarios.
-It complements the API reference — use it when you're deciding *which* knobs to turn,
-not *what* a function does.
+This guide explains the _recommended_ way to use `agents-skills` for common scenarios.
+It complements the API reference — use it when you're deciding _which_ knobs to turn,
+not _what_ a function does.
 
 ## Pick the right source format
 
-| You want to… | Use | Example |
-| ------------ | --- | ------- |
-| Install a well-known public skill set | GitHub shorthand | `anthropics/skills` |
-| Pin a specific version/branch | GitHub URL with `/tree/<ref>` | `https://github.com/owner/repo/tree/v1.2` |
-| Install a single skill from a repo | `@skill` shorthand | `anthropics/skills@pdf` |
-| Ship a prebuilt archive | Direct download URL | `https://example.com/skills.zip` |
-| Develop a skill locally | Local path | `./my-skill` |
+| You want to…                          | Use                           | Example                                   |
+| ------------------------------------- | ----------------------------- | ----------------------------------------- |
+| Install a well-known public skill set | GitHub shorthand              | `anthropics/skills`                       |
+| Pin a specific version/branch         | GitHub URL with `/tree/<ref>` | `https://github.com/owner/repo/tree/v1.2` |
+| Install a single skill from a repo    | `@skill` shorthand            | `anthropics/skills@pdf`                   |
+| Ship a prebuilt archive               | Direct download URL           | `https://example.com/skills.zip`          |
+| Develop a skill locally               | Local path                    | `./my-skill`                              |
 
 **Best practice:** pin to a ref (tag or commit) when reproducibility matters — e.g. in a
 CI pipeline or a team lockfile. Use the shorthand `owner/repo` only for personal,
@@ -21,7 +21,7 @@ track-latest workflows.
 ## Choose project vs. global scope
 
 - **Project scope** (default) installs into `./.agents/skills` and records the lockfile at
-  `./skills-lock.json` *inside the project*. This is the right choice for team-shared skills:
+  `./skills-lock.json` _inside the project_. This is the right choice for team-shared skills:
   commit the lockfile so everyone gets the same versions.
 - **Global scope** (`--global` / `global: true`) installs into `~/.agents/skills` with the
   lockfile at `~/.agents/.skill-lock.json`. Use it for personal, cross-project skills.
@@ -52,7 +52,7 @@ The library is pure data: every operation returns a [`Result`] and never writes 
 calls `process::exit`. Map outcomes to your own UI:
 
 - Inspect [`AddOutcome::failed`] / [`UpdateOutcome::failures`] for per-skill failures that
-  did *not* abort the whole operation.
+  did _not_ abort the whole operation.
 - A returned `Err` means the operation couldn't proceed at all (bad source, invalid agent
   name, transport failure). Match on [`SkillsError`] variants to decide messaging.
 
@@ -61,7 +61,7 @@ calls `process::exit`. Map outcomes to your own UI:
 Point the manager at a scratch directory so tests never touch the real home or network:
 
 ```rust,ignore
-use agent_skill::Manager;
+use agents_skills::Manager;
 
 let tmp = tempfile::TempDir::new().unwrap();
 let manager = Manager::builder()

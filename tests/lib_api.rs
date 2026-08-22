@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use agent_skill::{AddRequest, ListRequest, Manager, RemoveRequest, SkillsError, UpdateRequest};
+use agents_skills::{AddRequest, ListRequest, Manager, RemoveRequest, SkillsError, UpdateRequest};
 
 fn write_skill_source(root: &Path, rel_dir: &str, name: &str) -> PathBuf {
     let dir = root.join(rel_dir);

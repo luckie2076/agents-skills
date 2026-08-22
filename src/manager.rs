@@ -34,7 +34,7 @@ use crate::error::{Result, SkillsError};
 /// # Examples
 ///
 /// ```
-/// use agent_skill::{AddRequest, Manager};
+/// use agents_skills::{AddRequest, Manager};
 ///
 /// // Real environment:
 /// let real = Manager::new();
@@ -72,7 +72,7 @@ impl Manager {
     /// # Examples
     ///
     /// ```
-    /// use agent_skill::Manager;
+    /// use agents_skills::Manager;
     ///
     /// let manager = Manager::builder()
     ///     .home("/tmp/home")
@@ -109,7 +109,7 @@ impl Manager {
     /// real home access):
     ///
     /// ```
-    /// use agent_skill::{AddRequest, Manager};
+    /// use agents_skills::{AddRequest, Manager};
     ///
     /// let tmp = tempfile::TempDir::new().unwrap();
     /// let src = tmp.path().join("hello");
@@ -132,7 +132,7 @@ impl Manager {
     ///     ..Default::default()
     /// })?;
     /// assert!(!outcome.installed.is_empty());
-    /// # Ok::<(), agent_skill::Error>(())
+    /// # Ok::<(), agents_skills::Error>(())
     /// ```
     ///
     /// # Errors
@@ -252,13 +252,13 @@ impl Manager {
         for skill in &selected {
             for agent in &target_agents {
                 let r = install_skill_for_agent(skill, agent, &self.env, req.global, mode);
-                if r.success {
+                if r.success && !r.skipped {
                     installed.push(InstallSuccess {
                         name: skill.name.clone(),
                         agent: agent.display.to_string(),
                         canonical_path: r.canonical_path.clone(),
                     });
-                } else {
+                } else if !r.success {
                     failed.push(InstallFailure {
                         skill: skill.name.clone(),
                         agent: agent.display.to_string(),
@@ -295,7 +295,7 @@ impl Manager {
     /// # Examples
     ///
     /// ```
-    /// use agent_skill::Manager;
+    /// use agents_skills::Manager;
     ///
     /// let manager = Manager::new();
     /// // `add_source` with a bad source yields a structured error (no panic).
@@ -319,14 +319,14 @@ impl Manager {
     /// # Examples
     ///
     /// ```
-    /// use agent_skill::{ListRequest, Manager};
+    /// use agents_skills::{ListRequest, Manager};
     ///
     /// let manager = Manager::new();
     /// let skills = manager.list(&ListRequest::default())?;
     /// for skill in skills {
     ///     println!("{} -> {}", skill.name, skill.path.display());
     /// }
-    /// # Ok::<(), agent_skill::Error>(())
+    /// # Ok::<(), agents_skills::Error>(())
     /// ```
     ///
     /// # Errors
@@ -377,7 +377,7 @@ impl Manager {
     /// # Examples
     ///
     /// ```
-    /// use agent_skill::{Manager, RemoveRequest};
+    /// use agents_skills::{Manager, RemoveRequest};
     ///
     /// let tmp = tempfile::TempDir::new().unwrap();
     /// let manager = Manager::builder()
@@ -392,7 +392,7 @@ impl Manager {
     /// // Nothing installed in the scratch dir, so this is a harmless no-op.
     /// let outcome = manager.remove(&req)?;
     /// assert!(outcome.removed.is_empty());
-    /// # Ok::<(), agent_skill::Error>(())
+    /// # Ok::<(), agents_skills::Error>(())
     /// ```
     ///
     /// # Errors
@@ -523,7 +523,7 @@ impl Manager {
     /// # Examples
     ///
     /// ```
-    /// use agent_skill::{Manager, UpdateRequest};
+    /// use agents_skills::{Manager, UpdateRequest};
     ///
     /// let tmp = tempfile::TempDir::new().unwrap();
     /// let manager = Manager::builder()
@@ -534,7 +534,7 @@ impl Manager {
     /// // No lockfile in the scratch dir, so nothing to update.
     /// let outcome = manager.update(&UpdateRequest::default())?;
     /// assert_eq!(outcome.updated, 0);
-    /// # Ok::<(), agent_skill::Error>(())
+    /// # Ok::<(), agents_skills::Error>(())
     /// ```
     ///
     /// # Errors
@@ -733,7 +733,7 @@ impl AddRequest {
     /// # Examples
     ///
     /// ```
-    /// use agent_skill::{AddRequest, Manager};
+    /// use agents_skills::{AddRequest, Manager};
     ///
     /// let req = AddRequest::new("anthropics/skills");
     /// assert_eq!(req.source, "anthropics/skills");

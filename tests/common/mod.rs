@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use assert_cmd::Command;
 use tempfile::TempDir;
 
-/// A reusable workspace: a temp dir + an `agent-skill` command builder pointing at it.
+/// A reusable workspace: a temp dir + an `agents-skills` command builder pointing at it.
 ///
 /// `TempDir` cleans up on drop, so tests never need to delete temp files manually.
 pub struct TestProject {
@@ -30,9 +30,9 @@ impl TestProject {
         self.dir.path()
     }
 
-    /// Return an `agent-skill` command with `current_dir` already set.
+    /// Return an `agents-skills` command with `current_dir` already set.
     pub fn skills(&self) -> Command {
-        let mut cmd = Command::cargo_bin("agent-skill").expect("resolve agent-skill binary");
+        let mut cmd = Command::cargo_bin("agents-skills").expect("resolve agents-skills binary");
         cmd.current_dir(self.path());
         cmd
     }

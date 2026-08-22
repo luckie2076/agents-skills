@@ -1,4 +1,4 @@
-//! `agent-skill` as a library: a high-level [`Manager`] facade over the low-level [`core`] module.
+//! `agents-skills` as a library: a high-level [`Manager`] facade over the low-level [`core`] module.
 //!
 //! The library is pure data — it never prints to stdout/stderr and never calls
 //! `process::exit`. The CLI binary (see `src/main.rs` + `src/commands`) is responsible
@@ -7,7 +7,7 @@
 //! # Quick tour
 //!
 //! ```
-//! use agent_skill::{ListRequest, Manager};
+//! use agents_skills::{ListRequest, Manager};
 //!
 //! // Point the manager at a scratch environment (hermetic, no real home access).
 //! let manager = Manager::builder()
@@ -20,7 +20,7 @@
 //! // List what's installed.
 //! let skills = manager.list(&ListRequest::default())?;
 //!
-//! # Ok::<(), agent_skill::Error>(())
+//! # Ok::<(), agents_skills::Error>(())
 //! ```
 //!
 //! # Layering
@@ -28,7 +28,7 @@
 //! The crate root exposes only the high-level [`Manager`] facade, its request/outcome types,
 //! and the unified [`error`] types. Lower-level primitives (source parsing, agent directories,
 //! SKILL.md discovery, install, lock) live under [`core`] and are accessed as
-//! `agent_skill::core::...`.
+//! `agents_skills::core::...`.
 
 #![warn(missing_docs)]
 #![warn(rustdoc::broken_intra_doc_links)]

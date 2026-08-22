@@ -68,8 +68,6 @@ pub enum GlobalDir {
     Config(&'static str),
     /// Based on an env-var agent home (e.g. `~/.claude`).
     Env(EnvKey, &'static str),
-    /// No global install.
-    None,
 }
 
 /// An agent home key supporting `$VAR || ~/.<dir>`.
@@ -113,8 +111,6 @@ pub enum SpecialKey {
     Codex,
     /// OpenClaw.
     Openclaw,
-    /// Eve.
-    Eve,
     /// ZCode.
     Zcode,
     /// MiniMax.
@@ -123,8 +119,6 @@ pub enum SpecialKey {
     Astrbot,
     /// Zed.
     Zed,
-    /// PromptScript.
-    Promptscript,
     /// Kimi.
     Kimi,
     /// Universal skills.
@@ -352,13 +346,6 @@ pub const AGENTS: &[Agent] = &[
         ".factory/skills",
         GlobalDir::Home(".factory/skills"),
         Detect::Home(".factory"),
-    ),
-    Agent::new(
-        "eve",
-        "Eve",
-        "agent/skills",
-        GlobalDir::None,
-        Detect::Special(SpecialKey::Eve),
     ),
     Agent::new(
         "firebender",
@@ -693,14 +680,6 @@ pub const AGENTS: &[Agent] = &[
         Detect::Home(".pochi"),
     ),
     Agent::new(
-        "promptscript",
-        "PromptScript",
-        ".agents/skills",
-        GlobalDir::None,
-        Detect::Special(SpecialKey::Promptscript),
-    )
-    .mark(PrivateMark::Promptscript),
-    Agent::new(
         "adal",
         "AdaL",
         ".adal/skills",
@@ -731,7 +710,6 @@ enum PrivateMark {
     Firebender,
     Loaf,
     Replit,
-    Promptscript,
     Universal,
 }
 
@@ -767,7 +745,6 @@ pub fn global_skills_dir(agent: &Agent, env: &Env) -> Option<PathBuf> {
         GlobalDir::Home(p) => Some(env.home.join(p)),
         GlobalDir::Config(p) => Some(env.config.join(p)),
         GlobalDir::Env(key, p) => Some(env_home(key, env).join(p)),
-        GlobalDir::None => None,
     }
 }
 
@@ -809,7 +786,6 @@ fn special_detect(k: SpecialKey, env: &Env) -> bool {
                 || env.home.join(".clawdbot").exists()
                 || env.home.join(".moltbot").exists()
         }
-        SpecialKey::Eve => env.cwd.join("agent").exists() && has_dependency(&env.cwd, "eve"),
         SpecialKey::Zcode => {
             env.home.join(".zcode").exists() || Path::new("/Applications/ZCode.app").exists()
         }
@@ -826,9 +802,6 @@ fn special_detect(k: SpecialKey, env: &Env) -> bool {
                     .var("APPDATA")
                     .map(|a| Path::new(&a).join("Zed").exists())
                     .unwrap_or(false)
-        }
-        SpecialKey::Promptscript => {
-            env.cwd.join(".promptscript").exists() || env.cwd.join("promptscript.yaml").exists()
         }
         SpecialKey::Kimi => env.home.join(".kimi-code").exists() || env.home.join(".kimi").exists(),
         SpecialKey::Universal => false,
@@ -849,24 +822,6 @@ pub fn ensure_universal_agents(mut target: Vec<&'static Agent>) -> Vec<&'static 
         }
     }
     target
-}
-
-/// Read package.json to check a declared dependency (used for eve detection).
-fn has_dependency(cwd: &Path, name: &str) -> bool {
-    let Ok(content) = std::fs::read_to_string(cwd.join("package.json")) else {
-        return false;
-    };
-    let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return false;
-    };
-    for section in ["dependencies", "devDependencies"] {
-        if let Some(map) = pkg.get(section).and_then(|v| v.as_object())
-            && map.contains_key(name)
-        {
-            return true;
-        }
-    }
-    false
 }
 
 #[cfg(test)]
@@ -927,9 +882,6 @@ mod tests {
             global_skills_dir(amp, &env).unwrap(),
             tmp.path().join("config/agents/skills")
         );
-        // no global
-        let eve = get_agent("eve").unwrap();
-        assert!(global_skills_dir(eve, &env).is_none());
     }
 
     #[test]
@@ -960,21 +912,5 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let env = env_at(&tmp);
         assert!(!is_installed(get_agent("universal").unwrap(), &env));
-    }
-
-    #[test]
-    fn eve_detection_requires_package_dependency() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let env = env_at(&tmp);
-        std::fs::create_dir_all(tmp.path().join("agent")).unwrap();
-        // no package.json → not installed
-        assert!(!is_installed(get_agent("eve").unwrap(), &env));
-
-        std::fs::write(
-            tmp.path().join("package.json"),
-            r#"{"dependencies":{"eve":"1.0.0"}}"#,
-        )
-        .unwrap();
-        assert!(is_installed(get_agent("eve").unwrap(), &env));
     }
 }

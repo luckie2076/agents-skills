@@ -1,8 +1,8 @@
 //! update: reinstall from the source recorded in the lock. Renders the [`Manager::update`] outcome.
 
 use crate::cli::{DIM, GREEN, RED, RESET, TEXT, UpdateArgs};
-use agent_skill::error::Result;
-use agent_skill::{Manager, Scope, UpdateOutcome, UpdateRequest};
+use agents_skills::error::Result;
+use agents_skills::{Manager, Scope, UpdateOutcome, UpdateRequest};
 
 pub fn run(manager: &Manager, args: UpdateArgs) -> Result<()> {
     let scope = if args.global && !args.project {

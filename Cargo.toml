@@ -1,11 +1,11 @@
 [package]
-name = "agent-skill"
+name = "agents-skills"
 version = "0.1.0"
 edition = "2024"
 description = "A minimal, stable, easy-to-understand skill installer and manager for AI agents"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/luckie2076/agent-skill"
-homepage = "https://github.com/luckie2076/agent-skill"
+repository = "https://github.com/luckie2076/agents-skills"
+homepage = "https://github.com/luckie2076/agents-skills"
 readme = "README.md"
 keywords = ["skills", "ai-agents", "cli", "installer", "claude"]
 categories = ["command-line-utilities", "development-tools"]
@@ -13,7 +13,7 @@ rust-version = "1.88"
 exclude = [".github/", ".codebuddy/", "AGENT.md"]
 
 [[bin]]
-name = "agent-skill"
+name = "agents-skills"
 path = "src/main.rs"
 
 [dependencies]
