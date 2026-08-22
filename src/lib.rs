@@ -39,14 +39,13 @@ pub mod manager;
 
 // High-level facade.
 pub use manager::{
-    AddOutcome, AddRequest, AgentLinkResult, AgentUnlinkResult, InstallFailure, InstallSuccess,
-    LinkManagerOutcome, LinkRequest, LinkStatus, ListRequest, ListedSkill, Manager, ManagerBuilder,
-    RemoveOutcome, RemoveRequest, Scope, UnlinkManagerOutcome, UnlinkRequest, UpdateOutcome,
-    UpdateRequest,
+    AddOutcome, AddRequest, AgentLinkResult, InstallFailure, InstallSuccess, LinkManagerOutcome,
+    LinkRequest, LinkStatus, ListRequest, ListedSkill, Manager, ManagerBuilder, RemoveOutcome,
+    RemoveRequest, Scope, UpdateOutcome, UpdateRequest,
 };
 
-// Link/unlink outcome enums (surfaced by the facade's link result types).
-pub use core::link::{LinkOutcome, UnlinkOutcome};
+// Link/unlink outcome enum (surfaced by the facade's link result types).
+pub use core::link::LinkOutcome;
 
 // Errors.
 pub use error::{Error, Result, SkillsError};

@@ -17,7 +17,7 @@ use crate::core::fetch::{clone_repo, download_and_extract};
 use crate::core::install::{
     get_canonical_path, install_skill, list_installed_skills, sanitize_name, scan_installed,
 };
-use crate::core::link::{LinkOutcome, UnlinkOutcome, is_agent_linked, link_agent, unlink_agent};
+use crate::core::link::{LinkOutcome, is_agent_linked, link_agent, unlink_agent};
 use crate::core::lock::{
     LockEntry, compute_folder_hash, find_lock_entry, global_lock_path, local_lock_path,
     lock_fields, read_local_lock, write_local_lock,
@@ -279,9 +279,35 @@ impl Manager {
     /// `claude-code`, the historical exception).
     ///
     /// An agent dir that already holds content is refused; pass `migrate` to move its
-    /// skill subdirs into the canonical dir first (all-or-nothing: name conflicts and
-    /// non-skill entries abort the migration without changes). Legacy per-skill
-    /// symlinks pointing into the canonical dir are taken over automatically.
+    /// skill subdirs into the canonical dir first. Skills whose name already exists in
+    /// the canonical dir are skipped (the canonical copy wins, reported via
+    /// [`LinkOutcome::Migrated`] `skipped`); non-skill entries abort the migration
+    /// without changes. Legacy per-skill symlinks pointing into the canonical dir are
+    /// taken over automatically.
+    ///
+    /// # Selection defaults
+    ///
+    /// - `agents` empty → auto-detect installed agents (plus the universal agents);
+    ///   a `"*"` entry → every known agent.
+    ///
+    /// # Errors
+    ///
+    /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
+    /// Link or unlink agents' skills dirs relative to the canonical dir.
+    ///
+    /// Connects each agent's own skills dir to the canonical dir with a
+    /// directory-level symlink, so every install/update/remove is immediately
+    /// visible to all linked agents. With `req.unlink`, disconnects those dirs
+    /// instead — removes the symlink (only when it points at the canonical dir)
+    /// and recreates an empty real dir; the canonical dir and its skills are
+    /// left untouched.
+    ///
+    /// When linking, an agent dir that already holds content is refused; pass
+    /// `req.migrate` to move its skill subdirs into the canonical dir first.
+    /// Skills whose name already exists in the canonical dir are skipped (the
+    /// canonical copy wins); non-skill entries abort the migration without
+    /// changes. Legacy per-skill symlinks pointing into the canonical dir are
+    /// taken over automatically.
     ///
     /// # Selection defaults
     ///
@@ -298,7 +324,11 @@ impl Manager {
             .map(|agent| AgentLinkResult {
                 agent: agent.name.to_string(),
                 display: agent.display.to_string(),
-                outcome: link_agent(agent, req.global, &self.env, req.migrate),
+                outcome: if req.unlink {
+                    unlink_agent(agent, req.global, &self.env)
+                } else {
+                    link_agent(agent, req.global, &self.env, req.migrate)
+                },
             })
             .collect();
         Ok(LinkManagerOutcome {
@@ -307,47 +337,23 @@ impl Manager {
         })
     }
 
-    /// Unlink agents' skills dirs from the canonical dir.
-    ///
-    /// Removes the directory-level symlink (only when it points at the canonical dir)
-    /// and recreates an empty real dir in its place. The canonical dir and its skills
-    /// are left untouched; other agents keep their links.
-    ///
-    /// # Errors
-    ///
-    /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
-    pub fn unlink(&self, req: &UnlinkRequest) -> Result<UnlinkManagerOutcome> {
-        let target_agents = resolve_target_agents(&req.agents, &self.env)?;
-        let results = target_agents
-            .iter()
-            .map(|agent| AgentUnlinkResult {
-                agent: agent.name.to_string(),
-                display: agent.display.to_string(),
-                outcome: unlink_agent(agent, req.global, &self.env),
-            })
-            .collect();
-        Ok(UnlinkManagerOutcome {
-            global: req.global,
-            results,
-        })
-    }
-
     /// Link status of every installed agent in this scope.
     ///
     /// Only agents detected as installed locally (or already linked) are reported.
-    /// Universal agents have no link concept (the canonical dir is their own skills
-    /// dir), so they are excluded here; their skills visibility is shown by `list`.
+    /// Agents that natively read the canonical dir (universal) report `canonical`;
+    /// agents connected via a directory-level symlink report `linked`.
     pub fn link_status(&self, global: bool) -> Vec<LinkStatus> {
         AGENTS
             .iter()
             .filter(|a| {
-                !a.is_universal()
-                    && (is_installed(a, &self.env) || is_agent_linked(a, global, &self.env))
+                is_installed(a, &self.env)
+                    || (!a.is_universal() && is_agent_linked(a, global, &self.env))
             })
             .map(|a| LinkStatus {
                 name: a.name.to_string(),
                 display: a.display.to_string(),
                 linked: is_agent_linked(a, global, &self.env),
+                canonical: a.is_universal(),
             })
             .collect()
     }
@@ -407,8 +413,8 @@ impl Manager {
     ///
     /// Deletes each skill's directory from the canonical dir and drops its lockfile
     /// entry. Removal applies to every linked agent at once (they all share the
-    /// canonical dir); agent links themselves are untouched — see [`Manager::unlink`]
-    /// to disconnect an agent instead.
+    /// canonical dir); agent links themselves are untouched — call [`Manager::link`]
+    /// with `unlink: true` to disconnect an agent instead.
     ///
     /// # Selection semantics
     ///
@@ -752,7 +758,7 @@ pub struct RemoveRequest {
     pub all: bool,
 }
 
-/// Request for [`Manager::link`].
+/// Request for [`Manager::link`] — one entry point mirroring the `link` CLI command.
 ///
 /// `Default` links the auto-detected installed agents at project scope.
 #[derive(Debug, Clone, Default)]
@@ -761,19 +767,10 @@ pub struct LinkRequest {
     pub agents: Vec<String>,
     /// Link global skills dirs instead of project ones.
     pub global: bool,
+    /// Unlink (disconnect) the agents' skills dirs instead of linking them.
+    pub unlink: bool,
     /// Move existing agent skills dirs into the canonical dir before linking.
     pub migrate: bool,
-}
-
-/// Request for [`Manager::unlink`].
-///
-/// `Default` unlinks the auto-detected installed agents at project scope.
-#[derive(Debug, Clone, Default)]
-pub struct UnlinkRequest {
-    /// `"*"` or specific agent names; empty = auto-detect installed agents.
-    pub agents: Vec<String>,
-    /// Unlink global skills dirs instead of project ones.
-    pub global: bool,
 }
 
 /// Installation scope for [`Manager::update`].
@@ -840,29 +837,19 @@ pub struct InstallFailure {
     pub error: String,
 }
 
-/// Result of linking one agent's skills dir to the canonical dir.
+/// Result of linking (or unlinking) one agent's skills dir relative to the
+/// canonical dir.
 #[derive(Debug)]
 pub struct AgentLinkResult {
     /// Agent identifier (as used on the CLI).
     pub agent: String,
     /// Agent display name.
     pub display: String,
-    /// Link outcome details.
+    /// Link/unlink outcome details.
     pub outcome: LinkOutcome,
 }
 
-/// Result of unlinking one agent's skills dir from the canonical dir.
-#[derive(Debug)]
-pub struct AgentUnlinkResult {
-    /// Agent identifier (as used on the CLI).
-    pub agent: String,
-    /// Agent display name.
-    pub display: String,
-    /// Unlink outcome details.
-    pub outcome: UnlinkOutcome,
-}
-
-/// Link status of one agent (used by `list`).
+/// Link status of one agent (used by `link --status`).
 #[derive(Debug)]
 pub struct LinkStatus {
     /// Agent identifier (as used on the CLI).
@@ -871,6 +858,8 @@ pub struct LinkStatus {
     pub display: String,
     /// Whether the agent's skills dir is linked to the canonical dir.
     pub linked: bool,
+    /// Whether the agent natively uses the canonical dir (no link involved).
+    pub canonical: bool,
 }
 
 /// Result of [`Manager::link`].
@@ -880,15 +869,6 @@ pub struct LinkManagerOutcome {
     pub global: bool,
     /// Per-agent link results.
     pub results: Vec<AgentLinkResult>,
-}
-
-/// Result of [`Manager::unlink`].
-#[derive(Debug)]
-pub struct UnlinkManagerOutcome {
-    /// Whether the unlinks used global scope.
-    pub global: bool,
-    /// Per-agent unlink results.
-    pub results: Vec<AgentUnlinkResult>,
 }
 
 /// A listed skill enriched with lock metadata (serialized by `list --json`).

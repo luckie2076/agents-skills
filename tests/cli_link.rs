@@ -50,6 +50,25 @@ fn link_refuses_content_and_migrate_adopts_it() {
 }
 
 #[test]
+fn link_refuses_dir_with_only_stray_files() {
+    let p = TestProject::new();
+    // A real file is not a skill: linking is refused, nothing is touched, and the
+    // hint does not (wrongly) point at --migrate.
+    std::fs::create_dir_all(p.path().join(".claude/skills")).unwrap();
+    std::fs::write(p.path().join(".claude/skills/README.txt"), "x").unwrap();
+
+    p.skills()
+        .args(["link", "claude-code"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("non-skill files"))
+        .stdout(predicate::str::contains("rerun with --migrate").not());
+
+    assert!(p.path().join(".claude/skills/README.txt").exists());
+    assert!(!p.path().join(".claude/skills").is_symlink());
+}
+
+#[test]
 fn unlink_restores_real_dir() {
     let p = TestProject::new();
     p.skills().args(["link", "claude-code"]).assert().success();
@@ -79,11 +98,26 @@ fn link_status_prints_installed_agents_and_link_state() {
         .success()
         .stdout(predicate::str::contains("Agent link status"))
         .stdout(predicate::str::contains("Claude Code"))
-        .stdout(predicate::str::contains("canonical dir"))
+        .stdout(predicate::str::contains("(linked)"))
         .stdout(predicate::str::contains("CodeBuddy"))
         .stdout(predicate::str::contains(
             "not linked) — run `agents-skills link codebuddy`",
         ));
+}
+
+#[test]
+fn link_status_marks_universal_agents_as_canonical() {
+    let p = TestProject::new();
+    // Warp is a universal agent (reads `.agents/skills` natively); pretend it's installed.
+    std::fs::create_dir_all(p.path().join(".warp")).unwrap();
+
+    p.skills()
+        .env("HOME", p.path())
+        .args(["link", "--status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Warp"))
+        .stdout(predicate::str::contains("(canonical dir)"));
 }
 
 #[test]

@@ -23,9 +23,14 @@ pub enum LinkOutcome {
     Migrated {
         /// Names of the skill directories that were moved.
         moved: Vec<String>,
+        /// Names of skills left in place because the canonical dir already has
+        /// them (the canonical copies win).
+        skipped: Vec<String>,
     },
     /// The agent's skills dir has content and `migrate` was not requested.
     Refused {
+        /// Names of the skill directories already present in the agent's dir.
+        skills: Vec<String>,
         /// Human-readable reason and remedy.
         reason: String,
     },
@@ -36,20 +41,11 @@ pub enum LinkOutcome {
         /// Error message.
         error: String,
     },
-}
-
-/// Outcome of unlinking one agent's skills dir from the canonical dir.
-#[derive(Debug)]
-pub enum UnlinkOutcome {
-    /// The symlink was removed and an empty real dir recreated.
+    /// The agent's skills dir was unlinked from the canonical dir; an empty real
+    /// dir was recreated in its place.
     Unlinked,
-    /// The agent's skills dir is not a link to the canonical dir (nothing to do).
+    /// The agent's skills dir is not a link to the canonical dir (nothing to unlink).
     NotLinked,
-    /// The unlink failed.
-    Failed {
-        /// Error message.
-        error: String,
-    },
 }
 
 /// Whether an agent's skills dir is linked to the canonical dir (universal = always).
@@ -125,13 +121,39 @@ pub fn link_agent(agent: &Agent, global: bool, env: &Env, migrate: bool) -> Link
                 } else if migrate {
                     migrate_and_link(&agent_dir, &canonical, &entries)
                 } else {
-                    LinkOutcome::Refused {
-                        reason: format!(
+                    let skills = skill_names(&entries, &canonical);
+                    let strays: Vec<String> = entries
+                        .iter()
+                        .filter(|e| {
+                            let path = e.path();
+                            !is_legacy_link(e, &canonical)
+                                && !fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false)
+                        })
+                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                        .collect();
+                    let reason = match (skills.is_empty(), strays.is_empty()) {
+                        (false, true) => format!(
+                            "{} has existing skills; rerun with --migrate to move them into {}",
+                            agent_dir.display(),
+                            canonical.display()
+                        ),
+                        (false, false) => format!(
+                            "{} has existing skills and non-skill files; remove the files ({}), then rerun with --migrate",
+                            agent_dir.display(),
+                            strays.join(", ")
+                        ),
+                        (true, false) => format!(
+                            "{} contains non-skill files; move them out and rerun (migrate only moves skill directories): {}",
+                            agent_dir.display(),
+                            strays.join(", ")
+                        ),
+                        (true, true) => format!(
                             "{} has existing content; rerun with --migrate to move it into {}",
                             agent_dir.display(),
                             canonical.display()
                         ),
-                    }
+                    };
+                    LinkOutcome::Refused { skills, reason }
                 }
             }
         },
@@ -139,41 +161,44 @@ pub fn link_agent(agent: &Agent, global: bool, env: &Env, migrate: bool) -> Link
 }
 
 /// Unlink an agent's skills dir from the canonical dir, recreating an empty real dir.
-pub fn unlink_agent(agent: &Agent, global: bool, env: &Env) -> UnlinkOutcome {
+///
+/// Returns a [`LinkOutcome`]: [`LinkOutcome::Unlinked`] on success,
+/// [`LinkOutcome::NotLinked`] when there is nothing to do.
+pub fn unlink_agent(agent: &Agent, global: bool, env: &Env) -> LinkOutcome {
     // Universal agents use the canonical dir natively — nothing to unlink.
     if agent.is_universal() {
-        return UnlinkOutcome::NotLinked;
+        return LinkOutcome::NotLinked;
     }
 
     let Some(agent_dir) = agent_skills_dir(agent, global, env) else {
-        return UnlinkOutcome::NotLinked;
+        return LinkOutcome::NotLinked;
     };
 
     let meta = match fs::symlink_metadata(&agent_dir) {
-        Err(_) => return UnlinkOutcome::NotLinked,
+        Err(_) => return LinkOutcome::NotLinked,
         Ok(m) => m,
     };
     if !meta.file_type().is_symlink() {
-        return UnlinkOutcome::NotLinked;
+        return LinkOutcome::NotLinked;
     }
     let canonical = canonical_skills_dir(global, env);
     if !points_to(&agent_dir, &canonical) {
         // A foreign symlink: leave it alone.
-        return UnlinkOutcome::NotLinked;
+        return LinkOutcome::NotLinked;
     }
 
     if let Err(e) = fs::remove_file(&agent_dir) {
-        return UnlinkOutcome::Failed {
+        return LinkOutcome::Failed {
             error: e.to_string(),
         };
     }
     // Recreate an empty dir so the agent does not see a missing skills dir.
     if let Err(e) = fs::create_dir_all(&agent_dir) {
-        return UnlinkOutcome::Failed {
+        return LinkOutcome::Failed {
             error: e.to_string(),
         };
     }
-    UnlinkOutcome::Unlinked
+    LinkOutcome::Unlinked
 }
 
 /// Whether the agent's root dir exists in this scope (project: first component of
@@ -252,6 +277,21 @@ fn is_legacy_link(entry: &fs::DirEntry, canonical: &Path) -> bool {
     }
 }
 
+/// Names of skill dirs among `entries`: real subdirs and symlinks whose target is
+/// a directory (e.g. links into a skills hub). Files and legacy per-skill links
+/// are excluded — the latter already point into the canonical dir.
+fn skill_names(entries: &[fs::DirEntry], canonical: &Path) -> Vec<String> {
+    entries
+        .iter()
+        .filter(|e| {
+            let path = e.path();
+            !is_legacy_link(e, canonical)
+                && fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false)
+        })
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect()
+}
+
 /// Create `link` as a symlink to `canonical`, using a relative target when possible.
 fn create_dir_symlink(canonical: &Path, link: &Path) -> LinkOutcome {
     if let Some(parent) = link.parent()
@@ -284,13 +324,16 @@ fn relative_target(canonical: &Path, link: &Path) -> PathBuf {
     pathdiff::diff_paths(canonical, base).unwrap_or_else(|| canonical.to_path_buf())
 }
 
-/// Move every skill subdir of `agent_dir` into `canonical`, then link the dir.
+/// Move every skill of `agent_dir` into `canonical`, then link the dir.
 ///
-/// All-or-nothing: name conflicts with existing canonical skills and non-skill
-/// entries (stray files, foreign symlinks) abort before anything is moved.
+/// Skills are real subdirs and symlinks whose target is a directory (e.g. links
+/// into a skills hub); the latter are moved as links, preserving their semantics.
+/// Skills whose name already exists in the canonical dir are skipped — the
+/// canonical copy wins — and reported in `skipped`. Non-skill entries (stray
+/// files, symlinks to non-directories) abort before anything is moved.
 fn migrate_and_link(agent_dir: &Path, canonical: &Path, entries: &[fs::DirEntry]) -> LinkOutcome {
     let mut moved: Vec<String> = Vec::new();
-    let mut conflicts: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
     let mut strays: Vec<String> = Vec::new();
 
     for entry in entries {
@@ -305,10 +348,20 @@ fn migrate_and_link(agent_dir: &Path, canonical: &Path, entries: &[fs::DirEntry]
             if is_legacy_link(entry, canonical) {
                 continue; // old-model artifact: content already lives in canonical
             }
-            strays.push(name);
+            // A symlink whose target is a directory is a skill (e.g. a link into
+            // a skills hub); moving it preserves the link semantics.
+            if fs::metadata(&path).map(|m| m.is_dir()).unwrap_or(false) {
+                if canonical.join(&name).exists() {
+                    skipped.push(name);
+                } else {
+                    moved.push(name);
+                }
+            } else {
+                strays.push(name);
+            }
         } else if meta.is_dir() {
             if canonical.join(&name).exists() {
-                conflicts.push(name);
+                skipped.push(name);
             } else {
                 moved.push(name);
             }
@@ -317,22 +370,13 @@ fn migrate_and_link(agent_dir: &Path, canonical: &Path, entries: &[fs::DirEntry]
         }
     }
 
-    if !conflicts.is_empty() || !strays.is_empty() {
-        let mut reason = String::new();
-        if !conflicts.is_empty() {
-            reason.push_str(&format!(
-                "name conflicts with canonical skills: {}",
-                conflicts.join(", ")
-            ));
-        }
-        if !strays.is_empty() {
-            if !reason.is_empty() {
-                reason.push_str("; ");
-            }
-            reason.push_str(&format!("non-skill entries: {}", strays.join(", ")));
-        }
+    if !strays.is_empty() {
         return LinkOutcome::Failed {
-            error: format!("cannot migrate {}: {reason}", agent_dir.display()),
+            error: format!(
+                "cannot migrate {}: non-skill entries: {}",
+                agent_dir.display(),
+                strays.join(", ")
+            ),
         };
     }
 
@@ -350,13 +394,15 @@ fn migrate_and_link(agent_dir: &Path, canonical: &Path, entries: &[fs::DirEntry]
             };
         }
     }
-    if let Err(e) = fs::remove_dir(agent_dir) {
+    // Skip copies (and any legacy links) stay behind in the agent dir; all of
+    // them have their content in the canonical dir, so the whole dir is cleared.
+    if let Err(e) = fs::remove_dir_all(agent_dir) {
         return LinkOutcome::Failed {
             error: format!("remove {}: {e}", agent_dir.display()),
         };
     }
     match create_dir_symlink(canonical, agent_dir) {
-        LinkOutcome::Linked => LinkOutcome::Migrated { moved },
+        LinkOutcome::Linked => LinkOutcome::Migrated { moved, skipped },
         other => other,
     }
 }
@@ -479,14 +525,72 @@ mod tests {
         let env = env_at(&tmp);
         fs::create_dir_all(tmp.path().join(".claude/skills/my-skill")).unwrap();
         fs::write(tmp.path().join(".claude/skills/my-skill/SKILL.md"), "x").unwrap();
+        // A symlinked skill pointing elsewhere (e.g. into a skills hub) also counts.
+        fs::create_dir_all(tmp.path().join("hub/other-skill")).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("hub/other-skill"),
+            tmp.path().join(".claude/skills/other-skill"),
+        )
+        .unwrap();
+        // A stray file is not a skill.
+        fs::write(tmp.path().join(".claude/skills/README.txt"), "x").unwrap();
         let agent = get_agent("claude-code").unwrap();
 
         match link_agent(agent, false, &env, false) {
-            LinkOutcome::Refused { reason } => assert!(reason.contains("--migrate")),
+            LinkOutcome::Refused { skills, reason } => {
+                let mut skills = skills;
+                skills.sort();
+                assert_eq!(skills, vec!["my-skill", "other-skill"]);
+                assert!(reason.contains("--migrate"));
+            }
             other => panic!("expected Refused, got {other:?}"),
         }
         // Content untouched.
         assert!(tmp.path().join(".claude/skills/my-skill/SKILL.md").exists());
+        assert!(tmp.path().join(".claude/skills/other-skill").is_symlink());
+    }
+
+    #[test]
+    fn link_agent_refuses_dir_with_only_stray_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = env_at(&tmp);
+        fs::create_dir_all(tmp.path().join(".claude/skills")).unwrap();
+        fs::write(tmp.path().join(".claude/skills/README.txt"), "x").unwrap();
+        let agent = get_agent("claude-code").unwrap();
+
+        match link_agent(agent, false, &env, false) {
+            LinkOutcome::Refused { skills, reason } => {
+                // A file is not a skill: nothing to migrate, and the hint says so.
+                assert!(skills.is_empty());
+                assert!(reason.contains("non-skill files"));
+                assert!(!reason.contains("--migrate"));
+            }
+            other => panic!("expected Refused, got {other:?}"),
+        }
+        // Content untouched.
+        assert!(tmp.path().join(".claude/skills/README.txt").exists());
+        assert!(!tmp.path().join(".claude/skills").is_symlink());
+    }
+
+    #[test]
+    fn link_agent_refuses_mixed_skills_and_stray_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = env_at(&tmp);
+        fs::create_dir_all(tmp.path().join(".claude/skills/my-skill")).unwrap();
+        fs::write(tmp.path().join(".claude/skills/my-skill/SKILL.md"), "x").unwrap();
+        fs::write(tmp.path().join(".claude/skills/README.txt"), "x").unwrap();
+        let agent = get_agent("claude-code").unwrap();
+
+        match link_agent(agent, false, &env, false) {
+            LinkOutcome::Refused { skills, reason } => {
+                assert_eq!(skills, vec!["my-skill"]);
+                // The hint mentions both: the stray file must go before --migrate helps.
+                assert!(reason.contains("non-skill files"));
+                assert!(reason.contains("README.txt"));
+                assert!(reason.contains("--migrate"));
+            }
+            other => panic!("expected Refused, got {other:?}"),
+        }
     }
 
     #[test]
@@ -496,41 +600,83 @@ mod tests {
         let existing = tmp.path().join(".claude/skills/my-skill");
         fs::create_dir_all(&existing).unwrap();
         fs::write(existing.join("SKILL.md"), "x").unwrap();
+        // A symlinked skill pointing elsewhere (e.g. into a skills hub) is moved
+        // as a link, preserving its target.
+        fs::create_dir_all(tmp.path().join("hub/hub-skill")).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("hub/hub-skill"),
+            tmp.path().join(".claude/skills/hub-skill"),
+        )
+        .unwrap();
         let agent = get_agent("claude-code").unwrap();
 
         match link_agent(agent, false, &env, true) {
-            LinkOutcome::Migrated { moved } => assert_eq!(moved, vec!["my-skill"]),
+            LinkOutcome::Migrated { moved, skipped } => {
+                let mut moved = moved;
+                moved.sort();
+                assert_eq!(moved, vec!["hub-skill", "my-skill"]);
+                assert!(skipped.is_empty());
+            }
             other => panic!("expected Migrated, got {other:?}"),
         }
         assert!(tmp.path().join(".agents/skills/my-skill/SKILL.md").exists());
+        let moved_link = tmp.path().join(".agents/skills/hub-skill");
+        assert!(moved_link.is_symlink());
+        assert_eq!(
+            fs::read_link(&moved_link).unwrap(),
+            tmp.path().join("hub/hub-skill")
+        );
         assert!(tmp.path().join(".claude/skills").is_symlink());
     }
 
     #[test]
-    fn link_agent_migrate_conflict_aborts_without_changes() {
+    fn link_agent_migrate_skips_same_name_keeping_canonical() {
         let tmp = tempfile::TempDir::new().unwrap();
         let env = env_at(&tmp);
         let existing = tmp.path().join(".claude/skills/pdf");
         fs::create_dir_all(&existing).unwrap();
         fs::write(existing.join("SKILL.md"), "agent copy").unwrap();
-        // Same name already installed in canonical.
+        // Another skill that does not clash is still migrated.
+        fs::create_dir_all(tmp.path().join(".claude/skills/notes")).unwrap();
+        fs::write(tmp.path().join(".claude/skills/notes/SKILL.md"), "x").unwrap();
+        // Same name already installed in canonical; the canonical copy wins.
         fs::create_dir_all(tmp.path().join(".agents/skills/pdf")).unwrap();
         fs::write(tmp.path().join(".agents/skills/pdf/SKILL.md"), "canonical").unwrap();
         let agent = get_agent("claude-code").unwrap();
 
-        assert!(matches!(
-            link_agent(agent, false, &env, true),
-            LinkOutcome::Failed { .. }
-        ));
-        // Nothing moved, both copies intact.
-        assert_eq!(
-            fs::read_to_string(existing.join("SKILL.md")).unwrap(),
-            "agent copy"
-        );
+        match link_agent(agent, false, &env, true) {
+            LinkOutcome::Migrated { moved, skipped } => {
+                assert_eq!(moved, vec!["notes"]);
+                assert_eq!(skipped, vec!["pdf"]);
+            }
+            other => panic!("expected Migrated, got {other:?}"),
+        }
+        // Canonical copy untouched; agent dir now links to canonical.
         assert_eq!(
             fs::read_to_string(tmp.path().join(".agents/skills/pdf/SKILL.md")).unwrap(),
             "canonical"
         );
+        assert!(tmp.path().join(".claude/skills/notes/SKILL.md").exists());
+        assert!(tmp.path().join(".claude/skills").is_symlink());
+    }
+
+    #[test]
+    fn link_agent_migrate_rejects_stray_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = env_at(&tmp);
+        fs::create_dir_all(tmp.path().join(".claude/skills/my-skill")).unwrap();
+        fs::write(tmp.path().join(".claude/skills/my-skill/SKILL.md"), "x").unwrap();
+        fs::write(tmp.path().join(".claude/skills/README.txt"), "x").unwrap();
+        let agent = get_agent("claude-code").unwrap();
+
+        let err = match link_agent(agent, false, &env, true) {
+            LinkOutcome::Failed { error } => error,
+            other => panic!("expected Failed, got {other:?}"),
+        };
+        assert!(err.contains("non-skill entries: README.txt"));
+        // Nothing moved.
+        assert!(tmp.path().join(".claude/skills/my-skill/SKILL.md").exists());
+        assert!(!tmp.path().join(".agents/skills").exists());
     }
 
     #[test]
@@ -572,7 +718,7 @@ mod tests {
 
         assert!(matches!(
             unlink_agent(agent, false, &env),
-            UnlinkOutcome::Unlinked
+            LinkOutcome::Unlinked
         ));
         let dir = tmp.path().join(".windsurf/skills");
         assert!(dir.is_dir());
@@ -588,7 +734,7 @@ mod tests {
         let agent = get_agent("claude-code").unwrap();
         assert!(matches!(
             unlink_agent(agent, false, &env),
-            UnlinkOutcome::NotLinked
+            LinkOutcome::NotLinked
         ));
         assert!(tmp.path().join(".claude/skills/my-skill").exists());
 
@@ -596,7 +742,7 @@ mod tests {
         let uni = get_agent("amp").unwrap();
         assert!(matches!(
             unlink_agent(uni, false, &env),
-            UnlinkOutcome::NotLinked
+            LinkOutcome::NotLinked
         ));
     }
 

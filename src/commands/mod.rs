@@ -35,21 +35,41 @@ pub fn fail_agents(e: SkillsError) -> Result<()> {
     }
 }
 
-/// Render one agent link result line (used by `link`).
+/// Render one agent link/unlink result line (used by `link`).
 pub fn render_link_result(r: &AgentLinkResult) {
     match &r.outcome {
         LinkOutcome::Linked => println!("{GREEN}✓{RESET} {DIM}{}{RESET} linked", r.display),
         LinkOutcome::AlreadyLinked => {
             println!("{DIM}• {} already linked (canonical dir){RESET}", r.display)
         }
-        LinkOutcome::Migrated { moved } => println!(
-            "{GREEN}✓{RESET} {} linked {DIM}(migrated {} skill{}){RESET}",
-            r.display,
-            moved.join(", "),
-            if moved.len() != 1 { "s" } else { "" }
-        ),
-        LinkOutcome::Refused { reason } => println!("{YELLOW}!{RESET} {} {reason}", r.display),
+        LinkOutcome::Migrated { moved, skipped } => {
+            let migrated = if moved.is_empty() {
+                String::new()
+            } else {
+                format!(" {DIM}(migrated {}){RESET}", moved.join(", "))
+            };
+            println!("{GREEN}✓{RESET} {} linked{migrated}", r.display);
+            if !skipped.is_empty() {
+                println!(
+                    "  {DIM}kept canonical copies for: {}{RESET}",
+                    skipped.join(", ")
+                );
+            }
+        }
+        LinkOutcome::Refused { skills, reason } => {
+            println!("{YELLOW}!{RESET} {} {reason}", r.display);
+            if !skills.is_empty() {
+                println!(
+                    "  {DIM}existing skills in that dir: {}{RESET}",
+                    skills.join(", ")
+                );
+            }
+        }
         LinkOutcome::Skipped => println!("{DIM}– {} skipped (not installed){RESET}", r.display),
+        LinkOutcome::Unlinked => println!("{GREEN}✓{RESET} {} unlinked", r.display),
+        LinkOutcome::NotLinked => {
+            println!("{DIM}• {} not linked (nothing to do){RESET}", r.display)
+        }
         LinkOutcome::Failed { error } => println!("{RED}✗{RESET} {}: {error}", r.display),
     }
 }

@@ -1,6 +1,6 @@
 //! list: list installed skills (project/global, `--json`, `-a` agent filter).
 
-use crate::cli::{BOLD, CYAN, DIM, ListArgs, RESET, YELLOW};
+use crate::cli::{BOLD, CYAN, DIM, ListArgs, RESET};
 use crate::commands::{fail_agents, shorten_path};
 use agents_skills::core::agents::Env;
 use agents_skills::error::Result;
@@ -46,22 +46,7 @@ pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
 
 fn print_skill(skill: &ListedSkill, env: &Env) {
     let short = shorten_path(&skill.path, env);
-    let agent_info = if skill.agents.is_empty() {
-        format!("{YELLOW}not linked{RESET}")
-    } else {
-        format_list(&skill.agents)
-    };
     let source_label = skill.source.clone().unwrap_or_else(|| "local".to_string());
     println!("{CYAN}{}{RESET} {DIM}{}{RESET}", skill.name, short);
-    println!("  {DIM}Agents:{RESET} {agent_info}  {DIM}Source:{RESET} {source_label}");
-}
-
-fn format_list(items: &[String]) -> String {
-    const MAX: usize = 5;
-    if items.len() <= MAX {
-        items.join(", ")
-    } else {
-        let shown = &items[..MAX];
-        format!("{} +{} more", shown.join(", "), items.len() - MAX)
-    }
+    println!("  {DIM}Source:{RESET} {source_label}");
 }

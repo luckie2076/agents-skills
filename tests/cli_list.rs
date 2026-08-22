@@ -39,7 +39,7 @@ fn list_json_reports_name_scope_and_source() {
 }
 
 #[test]
-fn list_plain_prints_skill_agents_and_source() {
+fn list_plain_prints_skill_and_source() {
     let p = TestProject::new();
     let src = p.write_skill_source("my-skill", "pdf");
 
@@ -93,6 +93,52 @@ fn list_global_scope_with_g() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Global Skills"))
+        .stdout(predicate::str::contains("pdf"));
+}
+
+#[test]
+fn list_plain_hides_agents() {
+    let p = TestProject::new();
+    let src = p.write_skill_source("my-skill", "pdf");
+
+    p.skills()
+        .args(["add", src.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // Plain output shows name/path/Source but no per-skill agent column;
+    // agent link status is `link --status`'s job.
+    p.skills()
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pdf"))
+        .stdout(predicate::str::contains("Source:"))
+        .stdout(predicate::str::contains("Agents").not());
+}
+
+#[test]
+fn list_json_reports_agents_and_agent_filter() {
+    let p = TestProject::new();
+    let src = p.write_skill_source("my-skill", "pdf");
+
+    p.skills()
+        .args(["add", src.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // JSON keeps the machine-readable agents visibility list.
+    p.skills()
+        .args(["list", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"agents\":"));
+
+    // -a filters by a specific agent; universal agents always match.
+    p.skills()
+        .args(["list", "-a", "codex"])
+        .assert()
+        .success()
         .stdout(predicate::str::contains("pdf"));
 }
 

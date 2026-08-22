@@ -138,6 +138,93 @@ fn lib_list_json_shape() {
 }
 
 #[test]
+fn lib_link_status_reports_canonical_and_linked() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().join("home");
+    let cwd = tmp.path().join("project");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    // Installed universal agent (codex detects ~/.codex) → canonical: true.
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    // Installed non-universal agent (trae detects ~/.trae) → linked after linking.
+    std::fs::create_dir_all(home.join(".trae")).unwrap();
+
+    let manager = Manager::builder()
+        .home(home.clone())
+        .config(tmp.path().join("config"))
+        .cwd(cwd.clone())
+        .build();
+
+    manager
+        .link(&LinkRequest {
+            agents: vec!["trae".to_string()],
+            global: true,
+            ..Default::default()
+        })
+        .unwrap();
+
+    let statuses = manager.link_status(true);
+    let trae = statuses.iter().find(|s| s.name == "trae").unwrap();
+    assert!(!trae.canonical);
+    assert!(trae.linked);
+    let codex = statuses.iter().find(|s| s.name == "codex").unwrap();
+    assert!(codex.canonical);
+    assert!(codex.linked);
+    // Uninstalled agents (neither installed nor linked) are not reported.
+    assert!(statuses.iter().all(|s| s.name != "claude-code"));
+    // Uninstalled universal agents are not reported either.
+    assert!(statuses.iter().all(|s| s.name != "amp"));
+}
+
+#[test]
+fn lib_list_agent_filter_and_visibility() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let cwd = tmp.path().join("project");
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    let manager = Manager::builder()
+        .home(tmp.path().join("home"))
+        .config(tmp.path().join("config"))
+        .cwd(cwd.clone())
+        .build();
+
+    let src = write_skill_source(tmp.path(), "src", "pdf");
+    manager
+        .add(&AddRequest {
+            source: src.display().to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+
+    // All universal agents see the skill by default (agents holds display names).
+    let all = manager.list(&ListRequest::default()).unwrap();
+    assert_eq!(all.len(), 1);
+    assert!(all[0].agents.contains(&"Codex".to_string()));
+
+    // Filtering to a universal agent keeps the skill visible.
+    let filtered = manager
+        .list(&ListRequest {
+            agents: vec!["codex".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(filtered.len(), 1);
+    assert!(filtered[0].agents.contains(&"Codex".to_string()));
+
+    // Filtering to an uninstalled, unlinked agent keeps the skill listed but
+    // reports no visible agents (matches the CLI's -a behavior).
+    let none = manager
+        .list(&ListRequest {
+            agents: vec!["claude-code".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(none.len(), 1);
+    assert!(none[0].agents.is_empty());
+}
+
+#[test]
 fn lib_update_empty_is_noop() {
     let tmp = tempfile::TempDir::new().unwrap();
     let manager = Manager::builder()
