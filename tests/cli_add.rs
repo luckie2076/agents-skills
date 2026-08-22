@@ -14,7 +14,6 @@ fn add_local_path_installs_to_canonical() {
     p.skills()
         .arg("add")
         .arg(&src)
-        .args(["-a", "amp"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Installed 1 skill"));
@@ -30,12 +29,7 @@ fn add_supports_full_word_alias_install() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     // `install` is an alias of `add`.
-    p.skills()
-        .arg("install")
-        .arg(&src)
-        .args(["-a", "amp"])
-        .assert()
-        .success();
+    p.skills().arg("install").arg(&src).assert().success();
 
     p.assert_exists(".agents/skills/pdf/SKILL.md");
 }
@@ -46,7 +40,7 @@ fn add_supports_short_alias_a() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["a", src.to_str().unwrap(), "-a", "amp"])
+        .args(["a", src.to_str().unwrap()])
         .assert()
         .success();
 
@@ -92,7 +86,7 @@ fn add_global_installs_to_home() {
 
     p.skills()
         .env("HOME", &home)
-        .args(["add", src.to_str().unwrap(), "-g", "-a", "amp"])
+        .args(["add", src.to_str().unwrap(), "-g"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Installed 1 skill"));

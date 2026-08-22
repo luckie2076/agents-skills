@@ -12,7 +12,7 @@ fn remove_deletes_installed_skill_and_lock_entry() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap(), "-a", "amp"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
     p.assert_exists(".agents/skills/pdf");
@@ -36,7 +36,7 @@ fn remove_supports_alias_rm() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap(), "-a", "amp"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
 
@@ -52,11 +52,11 @@ fn remove_all_flag_removes_everything() {
     let b = p.write_skill_source("skill-b", "docx");
 
     p.skills()
-        .args(["add", a.to_str().unwrap(), "-a", "amp"])
+        .args(["add", a.to_str().unwrap()])
         .assert()
         .success();
     p.skills()
-        .args(["add", b.to_str().unwrap(), "-a", "amp"])
+        .args(["add", b.to_str().unwrap()])
         .assert()
         .success();
 
@@ -72,7 +72,7 @@ fn remove_without_args_prints_installed_list() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap(), "-a", "amp"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
 

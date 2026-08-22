@@ -31,11 +31,10 @@ fn main() -> agents_skills::Result<()> {
         .cwd(project)
         .build();
 
-    // Add a local skill to a specific agent.
+    // Add a local skill (installs into the canonical dir; no agent linking).
     let src = write_skill(tmp.path(), "hello");
     let outcome = manager.add(&AddRequest {
         source: src.display().to_string(),
-        agents: vec!["amp".to_string()],
         ..Default::default()
     })?;
     println!("Installed {} skill(s)", outcome.installed.len());

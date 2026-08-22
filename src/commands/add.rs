@@ -3,28 +3,20 @@
 //! Renders the [`Manager::add`] outcome; no business logic lives here.
 
 use std::collections::HashSet;
-use std::path::Path;
 
 use crate::cli::{AddArgs, BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW};
-use crate::commands::fail_agents;
+use crate::commands::{fail_agents, shorten_path};
 use agents_skills::core::agents::Env;
 use agents_skills::core::source::{Source, SourceType};
 use agents_skills::error::Result;
 use agents_skills::{AddOutcome, AddRequest, Manager, SkillsError};
 
 pub fn run(manager: &Manager, args: AddArgs) -> Result<()> {
-    let (skills, agents) = if args.all {
-        (vec!["*".to_string()], vec!["*".to_string()])
-    } else {
-        (args.skill.clone(), args.agent.clone())
-    };
     let req = AddRequest {
         source: args.source[0].clone(),
         global: args.global,
-        agents,
-        skills,
+        skills: args.skill.clone(),
         list_only: args.list,
-        copy: args.copy,
         full_depth: args.full_depth,
     };
 
@@ -100,23 +92,6 @@ fn render(env: &Env, req: &AddRequest, outcome: &AddOutcome) {
         println!("Installing all {} skills", outcome.skills.len());
     }
 
-    // Target agents message (only for auto-detection).
-    if req.agents.is_empty() {
-        if outcome.target_agents.len() == 1 {
-            println!("Installing to: {CYAN}{}{RESET}", outcome.target_agents[0]);
-        } else {
-            println!(
-                "Installing to: {}",
-                outcome
-                    .target_agents
-                    .iter()
-                    .map(|a| CYAN.to_string() + a + RESET)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-    }
-
     // Results.
     if !outcome.installed.is_empty() {
         let count = outcome
@@ -127,11 +102,7 @@ fn render(env: &Env, req: &AddRequest, outcome: &AddOutcome) {
             .len();
         println!();
         for s in &outcome.installed {
-            if let Some(canonical) = &s.canonical_path {
-                println!("{GREEN}✓{RESET} {}", shorten_path(canonical, env));
-            } else {
-                println!("{GREEN}✓{RESET} {}", s.name);
-            }
+            println!("{GREEN}✓{RESET} {}", shorten_path(&s.canonical_path, env));
         }
         println!();
         println!(
@@ -143,10 +114,7 @@ fn render(env: &Env, req: &AddRequest, outcome: &AddOutcome) {
         println!();
         println!("{RED}Failed to install {}{RESET}", outcome.failed.len());
         for f in &outcome.failed {
-            println!(
-                "  {RED}✗{RESET} {} → {}: {DIM}{}{RESET}",
-                f.skill, f.agent, f.error
-            );
+            println!("  {RED}✗{RESET} {}: {DIM}{}{RESET}", f.skill, f.error);
         }
     }
     println!();
@@ -175,27 +143,4 @@ fn print_source(parsed: &Source) {
         line.push_str(&format!(" {DIM}@{RESET}{CYAN}{sf}{RESET}"));
     }
     println!("{line}");
-}
-
-fn shorten_path(path: &Path, env: &Env) -> String {
-    let full = path.to_string_lossy();
-    let home_s = env.home.to_string_lossy();
-    let cwd_s = env.cwd.to_string_lossy();
-    if full == home_s {
-        return "~".to_string();
-    }
-    if let Some(rest) = full.strip_prefix(&*home_s)
-        && (rest.starts_with('/') || rest.starts_with('\\'))
-    {
-        return format!("~{rest}");
-    }
-    if full == cwd_s {
-        return ".".to_string();
-    }
-    if let Some(rest) = full.strip_prefix(&*cwd_s)
-        && (rest.starts_with('/') || rest.starts_with('\\'))
-    {
-        return format!(".{rest}");
-    }
-    full.to_string()
 }

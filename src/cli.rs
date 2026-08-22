@@ -35,6 +35,12 @@ pub enum Command {
     /// Update skills to latest versions (aliases: upgrade, check)
     #[command(alias = "upgrade", alias = "check")]
     Update(UpdateArgs),
+    /// Link agents' skills dirs to the canonical dir (alias: ln)
+    #[command(alias = "ln")]
+    Link(LinkArgs),
+    /// Unlink agents' skills dirs from the canonical dir (alias: un)
+    #[command(alias = "un")]
+    Unlink(UnlinkArgs),
 }
 
 #[derive(Debug, Args)]
@@ -45,9 +51,6 @@ pub struct AddArgs {
     /// Install skill globally (user-level) instead of project-level
     #[arg(short = 'g', long = "global")]
     pub global: bool,
-    /// Specify agents to install to (use '*' for all agents)
-    #[arg(short = 'a', long = "agent", num_args = 1..)]
-    pub agent: Vec<String>,
     /// Specify skill names to install (use '*' for all skills)
     #[arg(short = 's', long = "skill", num_args = 1..)]
     pub skill: Vec<String>,
@@ -57,12 +60,6 @@ pub struct AddArgs {
     /// Skip confirmation prompts
     #[arg(short = 'y', long = "yes")]
     pub yes: bool,
-    /// Copy files instead of symlinking to agent directories
-    #[arg(long = "copy")]
-    pub copy: bool,
-    /// Shorthand for --skill '*' --agent '*' -y
-    #[arg(long = "all")]
-    pub all: bool,
     /// Search all subdirectories even when a root SKILL.md exists
     #[arg(long = "full-depth")]
     pub full_depth: bool,
@@ -75,16 +72,13 @@ pub struct RemoveArgs {
     /// Remove from global scope (~/) instead of project scope
     #[arg(short = 'g', long = "global")]
     pub global: bool,
-    /// Remove from specific agents (use '*' for all agents)
-    #[arg(short = 'a', long = "agent", num_args = 1..)]
-    pub agent: Vec<String>,
     /// Specify skills to remove (use '*' for all skills)
     #[arg(short = 's', long = "skill", num_args = 1..)]
     pub skill: Vec<String>,
     /// Skip confirmation prompts
     #[arg(short = 'y', long = "yes")]
     pub yes: bool,
-    /// Shorthand for --skill '*' --agent '*' -y
+    /// Shorthand for --skill '*' -y
     #[arg(long = "all")]
     pub all: bool,
 }
@@ -115,6 +109,27 @@ pub struct UpdateArgs {
     /// Skip scope prompt (auto-detect: project if in a project, else global)
     #[arg(short = 'y', long = "yes")]
     pub yes: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct LinkArgs {
+    /// Agents to link (default: auto-detect installed agents; use '*' for all)
+    pub agents: Vec<String>,
+    /// Link global skills dirs instead of project ones
+    #[arg(short = 'g', long = "global")]
+    pub global: bool,
+    /// Migrate existing agent skills dirs into the canonical dir
+    #[arg(long = "migrate")]
+    pub migrate: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct UnlinkArgs {
+    /// Agents to unlink (default: auto-detect installed agents; use '*' for all)
+    pub agents: Vec<String>,
+    /// Unlink global skills dirs instead of project ones
+    #[arg(short = 'g', long = "global")]
+    pub global: bool,
 }
 
 // ============================================================================
@@ -174,6 +189,13 @@ pub fn show_banner() {
     println!();
     println!(
         "  {DIM}${RESET} {TEXT}agents-skills update{RESET}               {DIM}Update installed skills{RESET}"
+    );
+    println!();
+    println!(
+        "  {DIM}${RESET} {TEXT}agents-skills link{RESET}                 {DIM}Link agents to the skills dir{RESET}"
+    );
+    println!(
+        "  {DIM}${RESET} {TEXT}agents-skills unlink{RESET}               {DIM}Unlink agents{RESET}"
     );
     println!();
     println!("{DIM}try:{RESET} agents-skills add anthropics/skills");

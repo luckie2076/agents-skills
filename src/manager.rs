@@ -3,21 +3,21 @@
 //! The manager is pure data: it returns structured outcomes and never prints or exits;
 //! the CLI layer (src/commands) is responsible for rendering.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use serde::Serialize;
 
 use crate::core::agents::{
     AGENTS, Agent, Env, agent_display, config_home, detect_installed_agents,
-    ensure_universal_agents, get_agent, global_skills_dir, home,
+    ensure_universal_agents, get_agent, home, is_installed,
 };
 use crate::core::discover::{Skill, discover_skills, filter_skills};
 use crate::core::fetch::{clone_repo, download_and_extract};
 use crate::core::install::{
-    InstallMode, find_skill, get_canonical_path, get_install_path, install_skill_for_agent,
-    list_installed_skills, matches_skill, resolve_to_remove, sanitize_name, scan_installed,
+    get_canonical_path, install_skill, list_installed_skills, sanitize_name, scan_installed,
 };
+use crate::core::link::{LinkOutcome, UnlinkOutcome, is_agent_linked, link_agent, unlink_agent};
 use crate::core::lock::{
     LockEntry, compute_folder_hash, find_lock_entry, global_lock_path, local_lock_path,
     lock_fields, read_local_lock, write_local_lock,
@@ -90,18 +90,18 @@ impl Manager {
 
     /// Add (install) skills from a source.
     ///
-    /// Parses the source, discovers its skills, resolves the target agents, installs
-    /// each selected skill for each agent, and records successful installs in the
-    /// lockfile. Returns a structured [`AddOutcome`] with discovered, selected,
-    /// installed, and failed skills.
+    /// Parses the source, discovers its skills, and installs each selected skill
+    /// into the canonical dir (the only place real files live), recording
+    /// successful installs in the lockfile. Returns a structured [`AddOutcome`]
+    /// with discovered, selected, installed and failed skills.
+    ///
+    /// `add` never links any agent: use [`Manager::link`] to expose the canonical
+    /// dir to an agent afterwards.
     ///
     /// # Selection defaults
     ///
     /// - `skills` empty → all discovered skills; a `"*"` entry → all as well.
-    /// - `agents` empty → auto-detect installed agents (plus the universal agent);
-    ///   a `"*"` entry → every known agent.
     /// - `list_only` → discover and report, without installing anything.
-    /// - `copy` → copy files instead of symlinking (see [`InstallMode`]).
     ///
     /// # Examples
     ///
@@ -126,11 +126,7 @@ impl Manager {
     ///     .cwd(tmp.path().join("project"))
     ///     .build();
     ///
-    /// let outcome = manager.add(&AddRequest {
-    ///     source: src.display().to_string(),
-    ///     agents: vec!["*".to_string()],
-    ///     ..Default::default()
-    /// })?;
+    /// let outcome = manager.add(&AddRequest::new(src.display().to_string()))?;
     /// assert!(!outcome.installed.is_empty());
     /// # Ok::<(), agents_skills::Error>(())
     /// ```
@@ -139,7 +135,6 @@ impl Manager {
     ///
     /// - [`SkillsError::Message`] when the source is invalid, unreadable, or contains
     ///   no valid skill (a `SKILL.md` with `name` and `description`).
-    /// - [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
     /// - [`SkillsError::Git`], [`SkillsError::Http`], [`SkillsError::Io`],
     ///   [`SkillsError::Zip`], etc. for transport and filesystem failures.
     pub fn add(&self, req: &AddRequest) -> Result<AddOutcome> {
@@ -203,7 +198,6 @@ impl Manager {
                 source: parsed,
                 skills,
                 selected: Vec::new(),
-                target_agents: Vec::new(),
                 installed: Vec::new(),
                 failed: Vec::new(),
                 list_only: true,
@@ -219,52 +213,21 @@ impl Manager {
             skills.clone()
         };
 
-        // Determine target agents.
-        let target_agents: Vec<&'static Agent> = if req.agents.iter().any(|a| a == "*") {
-            AGENTS.iter().collect()
-        } else if !req.agents.is_empty() {
-            let mut agents = Vec::new();
-            let mut invalid = Vec::new();
-            for name in &req.agents {
-                match get_agent(name) {
-                    Some(a) => agents.push(a),
-                    None => invalid.push(name.clone()),
-                }
-            }
-            if !invalid.is_empty() {
-                return Err(SkillsError::InvalidAgents(invalid.join(", ")));
-            }
-            agents
-        } else {
-            let installed = detect_installed_agents(&self.env);
-            ensure_universal_agents(installed)
-        };
-
-        let mode = if req.copy {
-            InstallMode::Copy
-        } else {
-            InstallMode::Symlink
-        };
-
-        // Install.
+        // Install into the canonical dir (the only place real files live).
         let mut installed: Vec<InstallSuccess> = Vec::new();
         let mut failed: Vec<InstallFailure> = Vec::new();
         for skill in &selected {
-            for agent in &target_agents {
-                let r = install_skill_for_agent(skill, agent, &self.env, req.global, mode);
-                if r.success && !r.skipped {
-                    installed.push(InstallSuccess {
-                        name: skill.name.clone(),
-                        agent: agent.display.to_string(),
-                        canonical_path: r.canonical_path.clone(),
-                    });
-                } else if !r.success {
-                    failed.push(InstallFailure {
-                        skill: skill.name.clone(),
-                        agent: agent.display.to_string(),
-                        error: r.error.clone().unwrap_or_default(),
-                    });
-                }
+            let r = install_skill(skill, req.global, &self.env);
+            if r.success && !r.skipped {
+                installed.push(InstallSuccess {
+                    name: skill.name.clone(),
+                    canonical_path: r.canonical_path,
+                });
+            } else if !r.success {
+                failed.push(InstallFailure {
+                    skill: skill.name.clone(),
+                    error: r.error.unwrap_or_default(),
+                });
             }
         }
 
@@ -277,10 +240,6 @@ impl Manager {
             source: parsed,
             skills,
             selected,
-            target_agents: target_agents
-                .iter()
-                .map(|a| a.display.to_string())
-                .collect(),
             installed,
             failed,
             list_only: false,
@@ -290,7 +249,7 @@ impl Manager {
     /// Convenience: install every skill from `source` with default options.
     ///
     /// Equivalent to [`Manager::add`] with an [`AddRequest`] containing only a `source`
-    /// (and therefore default selection, agent auto-detection, and symlink mode).
+    /// (and therefore default selection: project scope, all skills).
     ///
     /// # Examples
     ///
@@ -308,6 +267,90 @@ impl Manager {
     /// Same as [`Manager::add`]: see its `# Errors` section.
     pub fn add_source(&self, source: impl Into<String>) -> Result<AddOutcome> {
         self.add(&AddRequest::new(source))
+    }
+
+    /// Link agents' skills dirs to the canonical dir.
+    ///
+    /// Each target agent's own skills dir becomes a relative symlink pointing at the
+    /// canonical dir, so every skill installed there is immediately visible to that
+    /// agent. Universal agents (whose skills dir already is the canonical dir) are
+    /// reported as [`LinkOutcome::AlreadyLinked`]. Agents whose root dir does not
+    /// exist in this scope are reported as [`LinkOutcome::Skipped`] (except
+    /// `claude-code`, the historical exception).
+    ///
+    /// An agent dir that already holds content is refused; pass `migrate` to move its
+    /// skill subdirs into the canonical dir first (all-or-nothing: name conflicts and
+    /// non-skill entries abort the migration without changes). Legacy per-skill
+    /// symlinks pointing into the canonical dir are taken over automatically.
+    ///
+    /// # Selection defaults
+    ///
+    /// - `agents` empty → auto-detect installed agents (plus the universal agents);
+    ///   a `"*"` entry → every known agent.
+    ///
+    /// # Errors
+    ///
+    /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
+    pub fn link(&self, req: &LinkRequest) -> Result<LinkManagerOutcome> {
+        let target_agents = resolve_target_agents(&req.agents, &self.env)?;
+        let results = target_agents
+            .iter()
+            .map(|agent| AgentLinkResult {
+                agent: agent.name.to_string(),
+                display: agent.display.to_string(),
+                outcome: link_agent(agent, req.global, &self.env, req.migrate),
+            })
+            .collect();
+        Ok(LinkManagerOutcome {
+            global: req.global,
+            results,
+        })
+    }
+
+    /// Unlink agents' skills dirs from the canonical dir.
+    ///
+    /// Removes the directory-level symlink (only when it points at the canonical dir)
+    /// and recreates an empty real dir in its place. The canonical dir and its skills
+    /// are left untouched; other agents keep their links.
+    ///
+    /// # Errors
+    ///
+    /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
+    pub fn unlink(&self, req: &UnlinkRequest) -> Result<UnlinkManagerOutcome> {
+        let target_agents = resolve_target_agents(&req.agents, &self.env)?;
+        let results = target_agents
+            .iter()
+            .map(|agent| AgentUnlinkResult {
+                agent: agent.name.to_string(),
+                display: agent.display.to_string(),
+                outcome: unlink_agent(agent, req.global, &self.env),
+            })
+            .collect();
+        Ok(UnlinkManagerOutcome {
+            global: req.global,
+            results,
+        })
+    }
+
+    /// Link status of every agent present in this scope.
+    ///
+    /// An agent is "present" when it is detected as installed, already linked, or
+    /// universal (the canonical dir is its own skills dir). Universal agents always
+    /// report `linked: true`.
+    pub fn link_status(&self, global: bool) -> Vec<LinkStatus> {
+        AGENTS
+            .iter()
+            .filter(|a| {
+                a.is_universal()
+                    || is_installed(a, &self.env)
+                    || is_agent_linked(a, global, &self.env)
+            })
+            .map(|a| LinkStatus {
+                name: a.name.to_string(),
+                display: a.display.to_string(),
+                linked: is_agent_linked(a, global, &self.env),
+            })
+            .collect()
     }
 
     /// List installed skills (project or global), enriched with lock metadata.
@@ -363,16 +406,16 @@ impl Manager {
 
     /// Remove installed skills.
     ///
-    /// Deletes each skill's per-agent install directory (including legacy locations
-    /// and ghost symlinks), removes the canonical directory once no agent still uses
-    /// it, and drops the entry from the lockfile.
+    /// Deletes each skill's directory from the canonical dir and drops its lockfile
+    /// entry. Removal applies to every linked agent at once (they all share the
+    /// canonical dir); agent links themselves are untouched — see [`Manager::unlink`]
+    /// to disconnect an agent instead.
     ///
     /// # Selection semantics
     ///
     /// - `skills` empty and `all` false → nothing is removed; the outcome reports the
     ///   currently installed names (used by the CLI to print a hint).
     /// - `all` true → every installed skill plus every lockfile key.
-    /// - `agents` empty → all agents (so ghost symlinks are cleaned too).
     ///
     /// # Examples
     ///
@@ -394,23 +437,8 @@ impl Manager {
     /// assert!(outcome.removed.is_empty());
     /// # Ok::<(), agents_skills::Error>(())
     /// ```
-    ///
-    /// # Errors
-    ///
-    /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
     pub fn remove(&self, req: &RemoveRequest) -> Result<RemoveOutcome> {
         let global = req.global;
-
-        // Validate agents.
-        let invalid: Vec<String> = req
-            .agents
-            .iter()
-            .filter(|a| get_agent(a).is_none())
-            .cloned()
-            .collect();
-        if !invalid.is_empty() {
-            return Err(SkillsError::InvalidAgents(invalid.join(", ")));
-        }
 
         let installed = scan_installed(&self.env, global);
 
@@ -448,46 +476,12 @@ impl Manager {
             });
         }
 
-        // Target agents (default all, ensuring ghost symlinks are cleaned).
-        let target_agents: Vec<&'static Agent> = if req.agents.is_empty() {
-            AGENTS.iter().collect()
-        } else {
-            req.agents.iter().filter_map(|a| get_agent(a)).collect()
-        };
-
+        // Remove from the canonical dir (visible to every linked agent at once).
         let mut removed: Vec<String> = Vec::new();
         for name in &selected {
             let canonical = get_canonical_path(name, global, &self.env);
             let sanitized = sanitize_name(name);
-
-            for agent in &target_agents {
-                let skill_path = get_install_path(name, agent, global, &self.env);
-                // Skip canonical (handled at the end).
-                if skill_path == canonical {
-                    continue;
-                }
-                let _ = std::fs::remove_dir_all(&skill_path);
-                let _ = std::fs::remove_file(&skill_path);
-                // Clean up the legacy location.
-                if global {
-                    if let Some(base) = global_skills_dir(agent, &self.env) {
-                        let _ = std::fs::remove_dir_all(base.join(&sanitized));
-                    }
-                } else {
-                    let _ = std::fs::remove_dir_all(
-                        self.env.cwd.join(agent.skills_dir).join(&sanitized),
-                    );
-                }
-            }
-
-            // Delete canonical only when no other agent still uses it.
-            let still_used = AGENTS.iter().any(|a| {
-                let p = get_install_path(name, a, global, &self.env);
-                p != canonical && p.exists()
-            });
-            if !still_used {
-                let _ = std::fs::remove_dir_all(&canonical);
-            }
+            let _ = std::fs::remove_dir_all(&canonical);
 
             // Clean the lock.
             let mut lock = read_local_lock(&lock_path(&self.env, global));
@@ -512,8 +506,9 @@ impl Manager {
     /// Update installed skills from their recorded (non-local) sources.
     ///
     /// Reads the lockfile, re-clones each recorded source once (skills sharing a source
-    /// are grouped), re-installs the latest version for the auto-detected agents, and
-    /// reports per-skill success/failure counts. Locally-sourced skills are skipped.
+    /// are grouped), re-installs the latest version into the canonical dir (all linked
+    /// agents see the update immediately), and reports per-skill success/failure
+    /// counts. Locally-sourced skills are skipped.
     ///
     /// # Scope resolution
     ///
@@ -603,21 +598,11 @@ impl Manager {
                     outcome.failed += 1;
                     continue;
                 };
-                let detected = detect_installed_agents(&self.env);
-                let agents = ensure_universal_agents(detected);
-                for agent in &agents {
-                    let r = install_skill_for_agent(
-                        skill,
-                        agent,
-                        &self.env,
-                        global,
-                        InstallMode::Symlink,
-                    );
-                    if r.success {
-                        outcome.updated += 1;
-                    } else {
-                        outcome.failed += 1;
-                    }
+                let r = install_skill(skill, global, &self.env);
+                if r.success {
+                    outcome.updated += 1;
+                } else {
+                    outcome.failed += 1;
                 }
                 outcome.updated_names.push(name.clone());
             }
@@ -712,14 +697,10 @@ pub struct AddRequest {
     pub source: String,
     /// Install globally (user-level, `~/.agents/skills`) instead of project-level.
     pub global: bool,
-    /// `"*"` or specific agent names; empty = auto-detect installed agents.
-    pub agents: Vec<String>,
     /// `"*"` or specific skill names; empty = all discovered skills.
     pub skills: Vec<String>,
     /// List available skills without installing anything.
     pub list_only: bool,
-    /// Copy files instead of symlinking.
-    pub copy: bool,
     /// Recurse into nested skill directories beyond the default container depth.
     pub full_depth: bool,
 }
@@ -727,8 +708,7 @@ pub struct AddRequest {
 impl AddRequest {
     /// Create a request that installs all skills from `source` with default options.
     ///
-    /// All other fields default: project scope, auto-detected agents, all skills,
-    /// symlink mode.
+    /// All other fields default: project scope, all skills.
     ///
     /// # Examples
     ///
@@ -737,7 +717,7 @@ impl AddRequest {
     ///
     /// let req = AddRequest::new("anthropics/skills");
     /// assert_eq!(req.source, "anthropics/skills");
-    /// assert!(req.agents.is_empty()); // auto-detect at install time
+    /// assert!(req.skills.is_empty()); // all discovered skills
     /// # let _ = Manager::new();
     /// ```
     pub fn new(source: impl Into<String>) -> Self {
@@ -769,10 +749,32 @@ pub struct RemoveRequest {
     pub skills: Vec<String>,
     /// Remove global skills instead of project skills.
     pub global: bool,
-    /// Restrict removal to specific agents; empty = all (cleans ghost symlinks).
-    pub agents: Vec<String>,
     /// Remove all installed skills.
     pub all: bool,
+}
+
+/// Request for [`Manager::link`].
+///
+/// `Default` links the auto-detected installed agents at project scope.
+#[derive(Debug, Clone, Default)]
+pub struct LinkRequest {
+    /// `"*"` or specific agent names; empty = auto-detect installed agents.
+    pub agents: Vec<String>,
+    /// Link global skills dirs instead of project ones.
+    pub global: bool,
+    /// Move existing agent skills dirs into the canonical dir before linking.
+    pub migrate: bool,
+}
+
+/// Request for [`Manager::unlink`].
+///
+/// `Default` unlinks the auto-detected installed agents at project scope.
+#[derive(Debug, Clone, Default)]
+pub struct UnlinkRequest {
+    /// `"*"` or specific agent names; empty = auto-detect installed agents.
+    pub agents: Vec<String>,
+    /// Unlink global skills dirs instead of project ones.
+    pub global: bool,
 }
 
 /// Installation scope for [`Manager::update`].
@@ -804,8 +806,7 @@ pub struct UpdateRequest {
 /// Result of [`Manager::add`].
 ///
 /// Carries the full picture of an add operation: what was discovered, what was
-/// selected, which agents were targeted, and which (skill × agent) pairs succeeded
-/// or failed.
+/// selected, and which skills were installed into the canonical dir.
 #[derive(Debug)]
 pub struct AddOutcome {
     /// The parsed source.
@@ -814,8 +815,6 @@ pub struct AddOutcome {
     pub skills: Vec<Skill>,
     /// Selected skills (empty when `list_only`).
     pub selected: Vec<Skill>,
-    /// Target agent display names.
-    pub target_agents: Vec<String>,
     /// Successfully installed skills.
     pub installed: Vec<InstallSuccess>,
     /// Failed installations.
@@ -824,26 +823,73 @@ pub struct AddOutcome {
     pub list_only: bool,
 }
 
-/// A single successful install (one skill × one agent).
+/// A single successful install (one skill, into the canonical dir).
 #[derive(Debug)]
 pub struct InstallSuccess {
     /// Skill name.
     pub name: String,
-    /// Agent display name.
-    pub agent: String,
-    /// Canonical directory (`None` in copy mode).
-    pub canonical_path: Option<PathBuf>,
+    /// Canonical directory.
+    pub canonical_path: PathBuf,
 }
 
-/// A single failed install (one skill × one agent).
+/// A single failed install.
 #[derive(Debug)]
 pub struct InstallFailure {
     /// Skill name.
     pub skill: String,
-    /// Agent display name.
-    pub agent: String,
     /// Error message.
     pub error: String,
+}
+
+/// Result of linking one agent's skills dir to the canonical dir.
+#[derive(Debug)]
+pub struct AgentLinkResult {
+    /// Agent identifier (as used on the CLI).
+    pub agent: String,
+    /// Agent display name.
+    pub display: String,
+    /// Link outcome details.
+    pub outcome: LinkOutcome,
+}
+
+/// Result of unlinking one agent's skills dir from the canonical dir.
+#[derive(Debug)]
+pub struct AgentUnlinkResult {
+    /// Agent identifier (as used on the CLI).
+    pub agent: String,
+    /// Agent display name.
+    pub display: String,
+    /// Unlink outcome details.
+    pub outcome: UnlinkOutcome,
+}
+
+/// Link status of one agent (used by `list`).
+#[derive(Debug)]
+pub struct LinkStatus {
+    /// Agent identifier (as used on the CLI).
+    pub name: String,
+    /// Agent display name.
+    pub display: String,
+    /// Whether the agent's skills dir is linked to the canonical dir.
+    pub linked: bool,
+}
+
+/// Result of [`Manager::link`].
+#[derive(Debug)]
+pub struct LinkManagerOutcome {
+    /// Whether the links used global scope.
+    pub global: bool,
+    /// Per-agent link results.
+    pub results: Vec<AgentLinkResult>,
+}
+
+/// Result of [`Manager::unlink`].
+#[derive(Debug)]
+pub struct UnlinkManagerOutcome {
+    /// Whether the unlinks used global scope.
+    pub global: bool,
+    /// Per-agent unlink results.
+    pub results: Vec<AgentUnlinkResult>,
 }
 
 /// A listed skill enriched with lock metadata (serialized by `list --json`).
@@ -885,7 +931,7 @@ pub struct RemoveOutcome {
 pub struct UpdateOutcome {
     /// Whether the update used global scope.
     pub global: bool,
-    /// Number of successful updates (one count per skill × agent).
+    /// Number of successful updates (one count per skill).
     pub updated: usize,
     /// Number of failed updates.
     pub failed: usize,
@@ -896,6 +942,93 @@ pub struct UpdateOutcome {
 }
 
 // ============================ Private helpers ============================
+
+/// Resolve agent selection: `"*"` → all; names → validated; empty → auto-detect + universal.
+fn resolve_target_agents(names: &[String], env: &Env) -> Result<Vec<&'static Agent>> {
+    if names.iter().any(|a| a == "*") {
+        return Ok(AGENTS.iter().collect());
+    }
+    if !names.is_empty() {
+        let mut agents = Vec::new();
+        let mut invalid = Vec::new();
+        for name in names {
+            match get_agent(name) {
+                Some(a) => agents.push(a),
+                None => invalid.push(name.clone()),
+            }
+        }
+        if !invalid.is_empty() {
+            return Err(SkillsError::InvalidAgents(invalid.join(", ")));
+        }
+        return Ok(agents);
+    }
+    let installed = detect_installed_agents(env);
+    Ok(ensure_universal_agents(installed))
+}
+
+/// Match a discovered skill by sanitized name or skillPath directory name.
+fn find_skill<'a>(
+    discovered: &'a [Skill],
+    name: &str,
+    skill_path: Option<&str>,
+) -> Option<&'a Skill> {
+    let sanitized = sanitize_name(name);
+    // Prefer matching by (sanitized) name.
+    if let Some(s) = discovered
+        .iter()
+        .find(|s| sanitize_name(&s.name) == sanitized)
+    {
+        return Some(s);
+    }
+    // Match by skillPath (directory name).
+    if let Some(sp) = skill_path
+        && let Some(dn) = sp.split('/').rfind(|p| !p.is_empty())
+        && let Some(s) = discovered.iter().find(|s| {
+            s.dir
+                .file_name()
+                .map(|f| f.to_string_lossy() == dn)
+                .unwrap_or(false)
+        })
+    {
+        return Some(s);
+    }
+    discovered.first().filter(|_| discovered.len() == 1)
+}
+
+/// Whether a skill name matches a case-insensitive filter (empty filter matches all).
+fn matches_skill(name: &str, filter: &[String]) -> bool {
+    if filter.is_empty() {
+        return true;
+    }
+    let lower = name.to_lowercase();
+    filter.iter().any(|f| f.to_lowercase() == lower)
+}
+
+/// Resolve skill names to remove: match by sanitized name, lock keys take priority.
+fn resolve_to_remove(
+    requested: &[String],
+    installed: &[String],
+    lock_keys: &[String],
+) -> Vec<String> {
+    let mut identity: HashMap<String, String> = HashMap::new();
+    for folder in installed {
+        identity
+            .entry(sanitize_name(folder))
+            .or_insert_with(|| folder.clone());
+    }
+    for key in lock_keys {
+        identity.insert(sanitize_name(key), key.clone());
+    }
+    let mut matched = HashSet::new();
+    for name in requested {
+        if let Some(hit) = identity.get(&sanitize_name(name)) {
+            matched.insert(hit.clone());
+        }
+    }
+    let mut v: Vec<String> = matched.into_iter().collect();
+    v.sort();
+    v
+}
 
 fn lock_path(env: &Env, global: bool) -> PathBuf {
     if global {
@@ -948,4 +1081,79 @@ fn has_project_skills(env: &Env) -> bool {
         return true;
     }
     env.cwd.join(".agents/skills").exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::test_utils::{env_at, write_and_parse_skill};
+
+    fn skills_with_dirs(pairs: &[(&str, &str)]) -> Vec<Skill> {
+        pairs
+            .iter()
+            .map(|(dir, name)| {
+                let mut s = write_and_parse_skill(std::path::Path::new(dir), name);
+                // write_and_parse_skill derives dir from the SKILL.md path; use the skill dir.
+                s.dir = std::path::PathBuf::from(dir);
+                s
+            })
+            .collect()
+    }
+
+    #[test]
+    fn find_skill_prefers_name_then_skill_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let a = tmp.path().join("dir-a");
+        let b = tmp.path().join("dir-b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let skills = skills_with_dirs(&[
+            (a.to_str().unwrap(), "alpha"),
+            (b.to_str().unwrap(), "beta"),
+        ]);
+
+        // By (sanitized) name.
+        assert_eq!(find_skill(&skills, "Alpha", None).unwrap().name, "alpha");
+        // By skillPath directory name.
+        assert_eq!(
+            find_skill(&skills, "missing", Some("x/dir-b"))
+                .unwrap()
+                .name,
+            "beta"
+        );
+        // Ambiguous without a match.
+        assert!(find_skill(&skills, "missing", None).is_none());
+    }
+
+    #[test]
+    fn matches_skill_filters_case_insensitively() {
+        let filter = vec!["PDF".to_string()];
+        assert!(matches_skill("pdf", &filter));
+        assert!(!matches_skill("git", &filter));
+        assert!(matches_skill("anything", &[]));
+    }
+
+    #[test]
+    fn resolve_to_remove_prefers_lock_keys() {
+        let installed = vec!["PDF".to_string()];
+        let lock_keys = vec!["pdf".to_string()];
+        let requested = vec!["pdf".to_string(), "unknown".to_string()];
+
+        // Lock keys take priority: "pdf" (not the on-disk "PDF" casing).
+        assert_eq!(
+            resolve_to_remove(&requested, &installed, &lock_keys),
+            vec!["pdf"]
+        );
+    }
+
+    #[test]
+    fn resolve_target_agents_validates_names() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = env_at(&tmp);
+        assert!(resolve_target_agents(&["claude-code".to_string()], &env).is_ok());
+        assert!(matches!(
+            resolve_target_agents(&["nope".to_string()], &env),
+            Err(SkillsError::InvalidAgents(_))
+        ));
+    }
 }

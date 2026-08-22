@@ -14,7 +14,6 @@ pub fn run(manager: &Manager, args: RemoveArgs) -> Result<()> {
             .cloned()
             .collect(),
         global: args.global,
-        agents: args.agent.clone(),
         all: args.all,
     };
     let outcome = match manager.remove(&req) {
@@ -37,7 +36,7 @@ fn render(req: &RemoveRequest, outcome: &RemoveOutcome) {
             }
             println!();
             println!("{DIM}Usage: agents-skills remove <name> [options]{RESET}");
-            println!("{DIM}Options: -g/--global, -a/--agent, -s/--skill, --all, -y/--yes{RESET}");
+            println!("{DIM}Options: -g/--global, -s/--skill, --all, -y/--yes{RESET}");
         }
         return;
     }
@@ -61,6 +60,7 @@ fn render(req: &RemoveRequest, outcome: &RemoveOutcome) {
         "{GREEN}Successfully removed {} skill(s){RESET}",
         outcome.removed.len()
     );
+    println!("{DIM}Removed for every linked agent (they share the canonical skills dir).{RESET}");
     println!();
     println!("{GREEN}Done!{RESET}");
 }

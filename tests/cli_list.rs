@@ -25,7 +25,7 @@ fn list_json_reports_name_scope_and_source() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap(), "-a", "amp"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
 
@@ -44,7 +44,7 @@ fn list_plain_prints_skill_agents_and_source() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap(), "-a", "amp"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
 
@@ -63,7 +63,7 @@ fn list_supports_alias_ls() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap(), "-a", "amp"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
 
@@ -83,7 +83,7 @@ fn list_global_scope_with_g() {
 
     p.skills()
         .env("HOME", &home)
-        .args(["add", src.to_str().unwrap(), "-g", "-a", "amp"])
+        .args(["add", src.to_str().unwrap(), "-g"])
         .assert()
         .success();
 

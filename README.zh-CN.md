@@ -5,78 +5,201 @@
 [![CI](https://github.com/luckie2076/agents-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/luckie2076/agents-skills/actions)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-一个极简、稳定的 **Rust 库**，用于安装与管理 AI Agent 技能，并附带一个基于该库
-构建的命令行接口。
+一个极简的 AI Agent 技能安装与管理工具：所有技能集中存放在一个**规范目录**，
+通过一次 `link` 即可让 [Claude Code](https://claude.com/code)、Codex、Cursor 等
+70+ 编程 Agent 全部可见可用——安装一次，处处生效。
 
-`agents-skills` 是**库优先**的：把它引入你的 Rust 项目，即可为
-[Claude Code](https://claude.com/code)、Codex、Cursor 等 70+ 编程 Agent 安装、列出、
-移除、更新 `SKILL.md` 包。同时附带一个小型 CLI（`agents-skills`），它只是同一套公开
-API 之上的薄渲染层。
+```bash
+cargo install agents-skills
+```
+
+同时提供可嵌入的 Rust 库，适合把技能管理集成进自有工具的场景，
+见[面向开发者](#面向开发者)。
 
 > 另见：[English README](README.md)
 
-## 为什么是库？
-
-- **把技能管理嵌入你自己的工具** —— 插件管理器、Agent 启动器、构建脚本都可以直接
-  安装技能，无需再调用外部二进制。
-- **纯数据、无 stdout 副作用** —— 每个 API 返回结构化结果，错误通过 `Result` 上抛；
-  库从不打印、从不调用 `process::exit`。如何渲染、何时退出由你决定。
-- **上下文可注入** —— `ManagerBuilder` 可指定任意的 `home`/`config`/`cwd`，让测试和
-  沙箱场景变得简单。
-
 ## 快速开始
 
-在 `Cargo.toml` 中添加依赖：
+```bash
+# 1. 核心一步：link 为所有已安装的 agent 创建指向规范目录的符号链接
+agents-skills link
 
-```toml
-[dependencies]
-agents-skills = "1"
+# 2. 安装技能包（装进规范目录后，所有 agent 立即可见）
+agents-skills add anthropics/skills
+
+# 查看已安装技能与链接状态
+agents-skills list
 ```
 
-使用高层 [`Manager`] 门面安装并列出技能：
+核心是 `link`：技能只在规范目录保存一份（项目级 `.agents/skills/` 或全局级
+`~/.agents/skills/`），`link` 为每个已安装的 agent（Claude Code、Codex、Cursor…）
+在其技能目录创建指向规范目录的符号链接；链接建立后，`add` 安装的技能所有
+agent 立即可见，无需任何同步。
 
-```rust
-use agents_skills::{AddRequest, ListRequest, Manager, Result};
+## 功能说明
 
-fn main() -> Result<()> {
-    let manager = Manager::new();
+### 核心：让 Agent 可见（link / unlink）
 
-    // 快捷方式：使用默认选项安装来源中的所有技能。
-    let outcome = manager.add_source("anthropics/skills")?;
-    println!("已安装 {} 个技能", outcome.installed.len());
+本质：技能只在规范目录保存一份真实副本；`link` 为每个 agent 在其技能目录创建
+指向规范目录的符号链接（如 `.claude/skills` → `../.agents/skills`），使 70+ 编程
+Agent 共享同一份技能，安装一次、处处可见。这是本项目最核心的能力：`add`/`remove`/
+`update` 只操作规范目录，其余 agent 通过链接自动同步。
 
-    // 完整形式：安装到指定 Agent（其余字段取默认值）。
-    let outcome = manager.add(&AddRequest {
-        source: "anthropics/skills".to_string(),
-        agents: vec!["*".to_string()],
-        ..Default::default()
-    })?;
-    println!("已安装 {} 个技能", outcome.installed.len());
-
-    // 列出已安装技能（可序列化；与 `list --json` 同构）。
-    let skills = manager.list(&ListRequest::default())?;
-    println!("{skills:?}");
-    Ok(())
-}
+```bash
+agents-skills link                           # 自动链接本机已安装的所有 agent
+agents-skills link claude-code               # 只链接指定 agent
+agents-skills link claude-code --migrate     # 链接并迁移存量技能
+agents-skills unlink claude-code             # 解除链接
 ```
 
-## API
+### 安装技能（add）
 
-### 高层：[`Manager`]
+本质：从来源拉取技能包，发现其中的 `SKILL.md` 后复制进规范目录（`.agents/skills`
+或 `~/.agents/skills`），并把来源与内容哈希写入 `skills-lock.json`。`add` 不做任何
+agent 链接——让 agent 可见是 `link` 的职责（见上文）。
+
+```bash
+# 安装全部技能到规范目录
+agents-skills add anthropics/skills
+
+# 仅安装仓库中的指定技能
+agents-skills add anthropics/skills@pdf
+
+# 安装后运行 link 即可让 agent 可见
+agents-skills link
+```
+
+### 列出技能（list）
+
+本质：扫描规范目录，读取已安装技能与各 agent 的链接状态。
+
+```bash
+agents-skills list             # 项目级
+agents-skills list --json      # 机器可读输出
+```
+
+### 移除技能（remove）
+
+本质：删除规范目录中的技能副本并同步 lockfile；agent 通过符号链接共享规范目录，
+一处删除处处生效。
+
+```bash
+agents-skills remove pdf       # 移除指定技能
+agents-skills remove --all     # 移除全部技能
+```
+
+### 更新技能（update）
+
+本质：按 lockfile 记录重新拉取来源，哈希比对后替换规范目录中的过时副本。
+
+```bash
+agents-skills update
+```
+
+### 项目级与全局作用域
+
+本质：技能只在规范目录保存一份，`-g/--global` 决定这份副本属于当前项目
+（`./.agents/skills`）还是用户目录（`~/.agents/skills`）。
+
+### 来源格式
+
+`add` 的 `<source>` 参数支持：
+
+| 格式                | 示例                                                      |
+| ------------------- | --------------------------------------------------------- |
+| 本地路径            | `./my-skill`, `/abs/path/skill`                           |
+| GitHub 简写         | `owner/repo`, `owner/repo@skill`, `owner/repo/subpath`    |
+| GitHub / GitLab URL | `https://github.com/owner/repo`, `https://gitlab.com/group/repo` |
+| SSH / git URL       | `git@github.com:owner/repo.git`                           |
+| HTTPS（well-known） | `https://example.com/skills`（发现 → 下载兜底）           |
+| HTTPS（下载）       | `.../skill.zip`, `.../skill.tar.gz`, 原始 `SKILL.md`      |
+
+仓库内按优先级容器目录发现技能（`skills/`、`.curated/`、`.experimental/`、
+`.system/`），浅层遮蔽深层。
+
+### 安装位置
+
+- **规范目录（唯一真实副本）** —— 项目级 `./.agents/skills/<name>`，全局级
+  `~/.agents/skills/<name>`。
+- **Agent 集成** —— 不原生读取规范目录的 agent 获得一个目录级符号链接：
+  `.claude/skills` → `../.agents/skills`（项目）或 `~/.claude/skills` →
+  `~/.agents/skills`（全局）。已链接的 agent 共享规范目录，无需任何同步步骤。
+
+### 命令速查表
+
+| 命令     | 别名                | 说明                            |
+| -------- | ------------------- | ------------------------------- |
+| `add`    | `a`, `i`, `install` | 从来源安装技能包                |
+| `remove` | `rm`, `r`           | 移除已安装技能                  |
+| `list`   | `ls`                | 列出已安装技能与 agent 链接     |
+| `update` | `upgrade`, `check`  | 将技能更新到最新版本            |
+| `link`   | `ln`                | 将 agent 技能目录链接到规范目录 |
+| `unlink` | `un`                | 解除 agent 与规范目录的链接     |
+
+> 完整的命令行参数（每个命令的选项与更多示例）见 [docs/CLI.md](docs/CLI.md)。
+
+## 面向开发者
+
+### 项目结构
+
+```
+src/
+├── lib.rs              库根：重新导出 Manager + core 原语
+├── manager.rs          高层 Manager 门面（add/list/remove/update/link/unlink）
+├── error.rs            统一错误类型与 Result 别名
+├── core/               领域逻辑（纯函数、依赖可注入）
+│   ├── source.rs       来源字符串解析
+│   ├── agents.rs       Agent → 技能目录映射表
+│   ├── discover.rs     SKILL.md 发现 + frontmatter 解析
+│   ├── fetch.rs        git 克隆 / HTTP 下载 / 归档解包
+│   ├── install.rs      安装技能到规范目录 + 已装清单
+│   ├── link.rs         目录级 agent 链接（link/unlink/migrate）
+│   └── lock.rs         skills-lock.json 读写 + 内容哈希
+├── main.rs             bin 入口（库之上的薄 CLI）
+├── cli.rs              clap 命令树（命令、别名、flags）
+└── commands/           CLI 渲染层（仅参数拆解 + 输出）
+    ├── add.rs
+    ├── remove.rs
+    ├── list.rs
+    ├── update.rs
+    ├── link.rs
+    └── unlink.rs
+
+examples/
+├── add_skill.rs        通过 Manager 门面安装技能（真实用法）
+└── manage.rs           在临时目录上演示 add → list → remove 生命周期
+
+tests/
+├── common/mod.rs       集成测试共享夹具
+├── lib_api.rs          库 API 集成测试
+├── cli_add.rs
+├── cli_remove.rs
+├── cli_list.rs
+├── cli_link.rs
+└── cli_version.rs
+```
+
+### 库接口
+
+CLI 只是同一套公开 Rust API 之上的薄渲染层，两者共享全部能力。
+
+#### 高层：[`Manager`]
 
 一站式操作。每个方法接收一个纯数据请求结构体，返回结构化结果。
 
-| 方法                    | 请求                | 返回                                 |
-| ----------------------- | ------------------- | ------------------------------------ |
-| [`Manager::add`]        | [`AddRequest`]      | [`AddOutcome`]（已安装 + 失败）      |
-| [`Manager::add_source`] | `impl Into<String>` | [`AddOutcome`]（已安装 + 失败）      |
-| [`Manager::list`]       | [`ListRequest`]     | `Vec<`[`ListedSkill`]`>`（可序列化） |
-| [`Manager::remove`]     | [`RemoveRequest`]   | [`RemoveOutcome`]（已移除名称）      |
-| [`Manager::update`]     | [`UpdateRequest`]   | [`UpdateOutcome`]（更新/失败计数）   |
+| 方法                    | 请求                | 返回                                      |
+| ----------------------- | ------------------- | ----------------------------------------- |
+| [`Manager::add`]        | [`AddRequest`]      | [`AddOutcome`]（已安装 + 链接 + 失败）    |
+| [`Manager::add_source`] | `impl Into<String>` | [`AddOutcome`]（已安装 + 链接 + 失败）    |
+| [`Manager::link`]       | [`LinkRequest`]     | [`LinkManagerOutcome`]（逐 agent 结果）   |
+| [`Manager::unlink`]     | [`UnlinkRequest`]   | [`UnlinkManagerOutcome`]（逐 agent 结果） |
+| [`Manager::list`]       | [`ListRequest`]     | `Vec<`[`ListedSkill`]`>`（可序列化）      |
+| [`Manager::remove`]     | [`RemoveRequest`]   | [`RemoveOutcome`]（已移除名称）           |
+| [`Manager::update`]     | [`UpdateRequest`]   | [`UpdateOutcome`]（更新/失败计数）        |
 
-请求结构体均为 `Default + Clone`，可通过字段覆盖进行构建；结果是纯数据。
+请求结构体均为 `Default + Clone`，可通过字段覆盖构建；结果是纯数据。
 
-### 上下文注入：[`ManagerBuilder`]
+#### 上下文注入：[`ManagerBuilder`]
 
 ```rust
 use agents_skills::Manager;
@@ -91,180 +214,37 @@ let manager = Manager::builder()
 
 `Manager::new()` 等价于 `Manager::builder().build()`，基于真实环境解析。
 
-### 底层：`core` 原语
+#### 底层：`core` 原语
 
 如需更细粒度控制，底层的 `core` 函数已在 crate 根重新导出：
 
 - **来源** —— [`parse_source`]、[`owner_repo`]
 - **发现** —— [`discover_skills`]、[`filter_skills`]、[`parse_skill_md`]
-- **安装** —— [`install_skill_for_agent`]、[`list_installed_skills`]、[`sanitize_name`]
+- **安装** —— [`install_skill`]、[`list_installed_skills`]、[`sanitize_name`]
+- **链接** —— [`link_agent`]、[`unlink_agent`]
 - **锁文件** —— [`read_local_lock`]、[`write_local_lock`]、[`compute_folder_hash`]
 - **Agent** —— [`get_agent`]、[`detect_installed_agents`]、[`Agent`]、[`Env`]
 
-### 示例
+#### 库的定位
 
-运行内置示例查看真实用法：
+- **纯数据** —— 库从不打印、从不调用 `process::exit`；返回结构化结果，错误通过
+  `Result` 上抛，如何渲染、何时退出由调用方决定。
+- **上下文可注入** —— `ManagerBuilder` 可指定任意 `home`/`config`/`cwd`，
+  测试与沙箱场景简单。
+- **CLI 与库共享同一套 API** —— 所有命令行为在库层实现，CLI 只做参数拆解与输出。
+
+#### 示例
 
 ```bash
 cargo run --example manage      # 在临时目录上演示 add → list → remove（无副作用）
 cargo run --example add_skill   # 通过 Manager 安装到你的真实环境
 ```
 
-## 特性
-
-- **从任意来源安装** —— 本地路径、GitHub 仓库/URL、GitLab、SSH/git URL，以及任意
-  HTTPS 端点（well-known 发现或直接下载）。
-- **70+ Agent** —— 静态目录映射表，数据驱动、依赖可注入，便于测试。
-- **项目级与全局作用域** —— 安装到 `.agents/skills`（项目）或 `~/.agents/skills`
-  （全局），支持 symlink 或 copy 模式。
-- **Lockfile** —— `skills-lock.json` 记录每个已安装技能的来源与 SHA-256 内容哈希，
-  使 `update` 可复现。
-- **技能发现** —— 优先级容器目录（`skills/`、`.curated/`、`.experimental/`、
-  `.system/`），浅层遮蔽深层。
-- **跨平台** —— macOS、Linux、Windows（Windows 使用目录 symlink，`git2` 提供传输
-  无关的克隆）。
-
-## 来源格式
-
-[`AddRequest`] 的 `source` 字段（以及 CLI 的 `<source>` 参数）支持：
-
-| 格式                | 示例                                                      |
-| ------------------- | --------------------------------------------------------- |
-| 本地路径            | `./my-skill`, `/abs/path/skill`                           |
-| GitHub 简写         | `owner/repo`, `owner/repo@skill`, `owner/repo/subpath`    |
-| GitHub URL          | `https://github.com/owner/repo`, `.../tree/main/skills`   |
-| GitLab URL          | `https://gitlab.com/group/repo`, `.../-/tree/main/skills` |
-| SSH / git URL       | `git@github.com:owner/repo.git`                           |
-| HTTPS（well-known） | `https://example.com/skills`（发现 → 下载兜底）           |
-| HTTPS（下载）       | `.../skill.zip`, `.../skill.tar.gz`, 原始 `SKILL.md`      |
-
-## 安装位置
-
-- **项目作用域** —— `./.agents/skills/<name>`（canonical），symlink 到各 Agent 的
-  项目技能目录。
-- **全局作用域** —— `~/.agents/skills/<name>`（canonical），以及各 Agent 的用户级
-  技能目录。
-
-## 命令行接口
-
-库之上附带一个小型 CLI：
-
-```bash
-# 安装（从 crates.io）
-cargo install agents-skills
-
-# 从 GitHub 仓库安装技能
-agents-skills add anthropics/skills
-
-# 安装某个技能到指定 Agent
-agents-skills add anthropics/skills@pdf --agent claude-code
-
-# 以机器可读的 JSON 输出
-agents-skills list --json
-
-# 根据 lockfile 来源更新所有技能
-agents-skills update
-```
-
-| 命令     | 别名                | 说明                 |
-| -------- | ------------------- | -------------------- |
-| `add`    | `a`, `i`, `install` | 从来源安装技能包     |
-| `remove` | `rm`, `r`           | 移除已安装技能       |
-| `list`   | `ls`                | 列出已安装技能       |
-| `update` | `upgrade`, `check`  | 将技能更新到最新版本 |
-
-### `add`
-
-```
-agents-skills add <source> [options]
-
-Options:
-  -g, --global        全局（用户级）安装，而非项目级
-  -a, --agent <a>...  要安装到的 Agent（'*' 表示全部）
-  -s, --skill <s>...  要安装的技能名（'*' 表示全部）
-  -l, --list          仅列出可用技能，不安装
-      --copy          复制文件而非 symlink
-      --all           --skill '*' --agent '*' -y 的简写
-      --full-depth    即使存在根 SKILL.md 也搜索所有子目录
-  -y, --yes           跳过确认提示
-```
-
-### `remove`
-
-```
-agents-skills remove [skills...] [options]
-
-Options:
-  -g, --global        从全局作用域而非项目作用域移除
-  -a, --agent <a>...  从指定 Agent 移除（'*' 表示全部）
-  -s, --skill <s>...  要移除的技能（'*' 表示全部）
-      --all           --skill '*' --agent '*' -y 的简写
-  -y, --yes           跳过确认提示
-```
-
-### `list`
-
-```
-agents-skills list [options]
-
-Options:
-  -g, --global        列出全局技能（默认：项目）
-  -a, --agent <a>...  按指定 Agent 过滤
-      --json          以 JSON 输出（机器可读，无 ANSI 颜色码）
-```
-
-### `update`
-
-```
-agents-skills update [skills...] [options]
-
-Options:
-  -g, --global        仅更新全局技能
-  -p, --project       仅更新项目技能
-  -y, --yes           跳过作用域提示（自动检测）
-```
-
-## 项目结构
-
-```
-src/
-├── lib.rs              库根：重新导出 Manager + core 原语
-├── manager.rs          高层 Manager 门面（add/list/remove/update）
-├── error.rs            统一错误类型与 Result 别名
-├── core/               领域逻辑（纯函数、依赖可注入）
-│   ├── source.rs       来源字符串解析
-│   ├── agents.rs       Agent → 技能目录映射表
-│   ├── discover.rs     SKILL.md 发现 + frontmatter 解析
-│   ├── fetch.rs        git 克隆 / HTTP 下载 / 归档解包
-│   ├── install.rs      安装编排（canonical + symlink/copy）
-│   └── lock.rs         skills-lock.json 读写 + 内容哈希
-├── main.rs             bin 入口（库之上的薄 CLI）
-├── cli.rs              clap 命令树（命令、别名、flags）
-└── commands/           CLI 渲染层（仅参数拆解 + 输出）
-    ├── add.rs
-    ├── remove.rs
-    ├── list.rs
-    └── update.rs
-
-examples/
-├── add_skill.rs        通过 Manager 门面安装技能（真实用法）
-└── manage.rs           在临时目录上演示 add → list → remove 生命周期
-
-tests/
-├── common/mod.rs       集成测试共享夹具
-├── lib_api.rs          库 API 集成测试
-├── cli_add.rs
-├── cli_remove.rs
-├── cli_list.rs
-└── cli_version.rs
-```
-
-## 开发
+### 开发
 
 ```bash
 cargo build            # 构建
-cargo test             # 运行全部测试（61 单元 + 26 集成）
-cargo run --example manage   # 运行库使用示例
+cargo test             # 运行全部测试
 cargo clippy           # lint
 cargo fmt              # 格式化
 ```
@@ -272,16 +252,14 @@ cargo fmt              # 格式化
 测试遵循测试金字塔：快速、隔离的单元测试通过 `#[cfg(test)]` 内联在 `src/` 中，
 而 `tests/` 中的黑盒集成测试通过 `assert_cmd` 驱动真实 CLI。
 
-## 设计取舍
+### 设计取舍
 
-该 crate 刻意保持极简与稳定：
-
-- **库优先** —— 库是主要接口，CLI 只是同一套公开 API 之上的薄渲染层。
-- **纯数据** —— 库从不打印、从不调用 `process::exit`；它返回结构化结果，错误通过
+- **极简稳定** —— 刻意保持小而稳定，注重跨平台（macOS、Linux、Windows）。
+- **纯数据** —— 库从不打印、从不调用 `process::exit`；结果结构化，错误通过
   `Result` 上抛。
 - **无遥测** —— 不会有任何数据离开你的机器。
 
-## License
+### License
 
 在以下任一许可证下授权：
 
@@ -293,12 +271,18 @@ cargo fmt              # 格式化
 [`Manager`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html
 [`Manager::add`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add
 [`Manager::add_source`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add_source
+[`Manager::link`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.link
+[`Manager::unlink`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.unlink
 [`Manager::list`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.list
 [`Manager::remove`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.remove
 [`Manager::update`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.update
 [`ManagerBuilder`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ManagerBuilder.html
 [`AddRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddRequest.html
 [`AddOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddOutcome.html
+[`LinkRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.LinkRequest.html
+[`LinkManagerOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.LinkManagerOutcome.html
+[`UnlinkRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UnlinkRequest.html
+[`UnlinkManagerOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UnlinkManagerOutcome.html
 [`ListRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListRequest.html
 [`ListedSkill`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListedSkill.html
 [`RemoveRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveRequest.html
@@ -310,7 +294,9 @@ cargo fmt              # 格式化
 [`discover_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.discover_skills.html
 [`filter_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.filter_skills.html
 [`parse_skill_md`]: https://docs.rs/agents-skills/latest/agents_skills/fn.parse_skill_md.html
-[`install_skill_for_agent`]: https://docs.rs/agents-skills/latest/agents_skills/fn.install_skill_for_agent.html
+[`install_skill`]: https://docs.rs/agents-skills/latest/agents_skills/fn.install_skill.html
+[`link_agent`]: https://docs.rs/agents-skills/latest/agents_skills/fn.link_agent.html
+[`unlink_agent`]: https://docs.rs/agents-skills/latest/agents_skills/fn.unlink_agent.html
 [`list_installed_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.list_installed_skills.html
 [`sanitize_name`]: https://docs.rs/agents-skills/latest/agents_skills/fn.sanitize_name.html
 [`read_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/fn.read_local_lock.html

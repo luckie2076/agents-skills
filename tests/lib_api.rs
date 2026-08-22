@@ -3,7 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
-use agents_skills::{AddRequest, ListRequest, Manager, RemoveRequest, SkillsError, UpdateRequest};
+use agents_skills::{
+    AddRequest, LinkRequest, ListRequest, Manager, RemoveRequest, SkillsError, UpdateRequest,
+};
 
 fn write_skill_source(root: &Path, rel_dir: &str, name: &str) -> PathBuf {
     let dir = root.join(rel_dir);
@@ -25,12 +27,11 @@ fn lib_add_list_remove_roundtrip() {
         .cwd(cwd.clone())
         .build();
 
-    // Add a local skill to a specific agent.
+    // Add a local skill.
     let src = write_skill_source(tmp.path(), "src", "pdf");
     let outcome = manager
         .add(&AddRequest {
             source: src.display().to_string(),
-            agents: vec!["amp".to_string()],
             ..Default::default()
         })
         .unwrap();
@@ -77,7 +78,6 @@ fn lib_add_global_uses_home() {
         .add(&AddRequest {
             source: src.display().to_string(),
             global: true,
-            agents: vec!["amp".to_string()],
             ..Default::default()
         })
         .unwrap();
@@ -91,11 +91,9 @@ fn lib_add_global_uses_home() {
 fn lib_invalid_agent_returns_error() {
     let tmp = tempfile::TempDir::new().unwrap();
     let manager = Manager::builder().cwd(tmp.path().join("project")).build();
-    let src = write_skill_source(tmp.path(), "src", "pdf");
 
     let err = manager
-        .add(&AddRequest {
-            source: src.display().to_string(),
+        .link(&LinkRequest {
             agents: vec!["not-an-agent".to_string()],
             ..Default::default()
         })
@@ -128,7 +126,6 @@ fn lib_list_json_shape() {
     manager
         .add(&AddRequest {
             source: src.display().to_string(),
-            agents: vec!["amp".to_string()],
             ..Default::default()
         })
         .unwrap();

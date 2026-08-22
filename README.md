@@ -69,8 +69,10 @@ One-stop operations. Each takes a plain request struct and returns a structured 
 
 | Method                  | Request             | Returns                                       |
 | ----------------------- | ------------------- | --------------------------------------------- |
-| [`Manager::add`]        | [`AddRequest`]      | [`AddOutcome`] (installed + failed)           |
-| [`Manager::add_source`] | `impl Into<String>` | [`AddOutcome`] (installed + failed)           |
+| [`Manager::add`]        | [`AddRequest`]      | [`AddOutcome`] (installed + links + failed)   |
+| [`Manager::add_source`] | `impl Into<String>` | [`AddOutcome`] (installed + links + failed)   |
+| [`Manager::link`]       | [`LinkRequest`]     | [`LinkManagerOutcome`] (per-agent results)    |
+| [`Manager::unlink`]     | [`UnlinkRequest`]   | [`UnlinkManagerOutcome`] (per-agent results)  |
 | [`Manager::list`]       | [`ListRequest`]     | `Vec<`[`ListedSkill`]`>` (serde-serializable) |
 | [`Manager::remove`]     | [`RemoveRequest`]   | [`RemoveOutcome`] (removed names)             |
 | [`Manager::update`]     | [`UpdateRequest`]   | [`UpdateOutcome`] (updated/failed counts)     |
@@ -100,7 +102,8 @@ For finer control, the underlying `core` functions are re-exported at the crate 
 
 - **Source** — [`parse_source`], [`owner_repo`]
 - **Discovery** — [`discover_skills`], [`filter_skills`], [`parse_skill_md`]
-- **Install** — [`install_skill_for_agent`], [`list_installed_skills`], [`sanitize_name`]
+- **Install** — [`install_skill`], [`list_installed_skills`], [`sanitize_name`]
+- **Links** — [`link_agent`], [`unlink_agent`]
 - **Lockfile** — [`read_local_lock`], [`write_local_lock`], [`compute_folder_hash`]
 - **Agents** — [`get_agent`], [`detect_installed_agents`], [`Agent`], [`Env`]
 
@@ -119,8 +122,12 @@ cargo run --example add_skill   # install via Manager into your real environment
   arbitrary HTTPS endpoints (well-known discovery or direct download).
 - **70+ agents** — static directory-mapping table, data-driven and dependency-injectable
   for testability.
+- **Directory-level agent links** — skills live once in the canonical dir
+  (`.agents/skills` / `~/.agents/skills`); each agent's own skills dir becomes a relative
+  symlink to it, so every install, update, or remove is instantly visible to all linked
+  agents with no sync step. Agents that natively read `.agents/skills` need no link at all.
 - **Project and global scopes** — install to `.agents/skills` (project) or `~/.agents/skills`
-  (global) with symlink or copy mode.
+  (global).
 - **Lockfile** — `skills-lock.json` records the source and a SHA-256 content hash for every
   installed skill, enabling reproducible `update`.
 - **Skill discovery** — priority container dirs (`skills/`, `.curated/`, `.experimental/`,
@@ -144,10 +151,12 @@ The `source` field of [`AddRequest`] (and the CLI `<source>` argument) accepts:
 
 ## Install locations
 
-- **Project scope** — `./.agents/skills/<name>` (canonical), symlinked into each agent's
-  project skills directory.
-- **Global scope** — `~/.agents/skills/<name>` (canonical), plus each agent's user-level
-  skills directory.
+- **Canonical dir (the only place real files live)** — `./.agents/skills/<name>` at project
+  scope, `~/.agents/skills/<name>` globally.
+- **Agent integration** — agents that don't natively read the canonical dir get a
+  directory-level symlink: `.claude/skills` → `../.agents/skills` (project) or
+  `~/.claude/skills` → `~/.agents/skills` (global). Linked agents share the canonical dir,
+  so installing a skill once makes it visible everywhere.
 
 ## Command-line interface
 
@@ -160,8 +169,13 @@ cargo install agents-skills
 # Install a skill from a GitHub repo
 agents-skills add anthropics/skills
 
-# Install a specific skill, to a specific agent
+# Install a specific skill, ensuring an agent is linked
 agents-skills add anthropics/skills@pdf --agent claude-code
+
+# Link an agent's skills dir to the canonical dir
+# (adopt existing skills with --migrate)
+agents-skills link claude-code
+agents-skills link claude-code --migrate
 
 # List as machine-readable JSON
 agents-skills list --json
@@ -174,8 +188,10 @@ agents-skills update
 | -------- | ------------------- | -------------------------------------- |
 | `add`    | `a`, `i`, `install` | Install skill packages from a source   |
 | `remove` | `rm`, `r`           | Remove installed skills                |
-| `list`   | `ls`                | List installed skills                  |
+| `list`   | `ls`                | List installed skills + agent links    |
 | `update` | `upgrade`, `check`  | Update skills to their latest versions |
+| `link`   | `ln`                | Link agents' skills dirs to canonical  |
+| `unlink` | `un`                | Unlink agents from the canonical dir   |
 
 ### `add`
 
@@ -184,10 +200,10 @@ agents-skills add <source> [options]
 
 Options:
   -g, --global        Install globally (user-level) instead of project-level
-  -a, --agent <a>...  Agents to install to ('*' for all)
+  -a, --agent <a>...  Agents to link to the canonical dir ('*' for all)
   -s, --skill <s>...  Skill names to install ('*' for all)
   -l, --list          List available skills without installing
-      --copy          Copy files instead of symlinking
+      --migrate       Move existing agent skills dirs into the canonical dir
       --all           Shorthand for --skill '*' --agent '*' -y
       --full-depth    Search all subdirectories even with a root SKILL.md
   -y, --yes           Skip confirmation prompts
@@ -200,9 +216,8 @@ agents-skills remove [skills...] [options]
 
 Options:
   -g, --global        Remove from global scope instead of project scope
-  -a, --agent <a>...  Remove from specific agents ('*' for all)
   -s, --skill <s>...  Skills to remove ('*' for all)
-      --all           Shorthand for --skill '*' --agent '*' -y
+      --all           Shorthand for --skill '*' -y
   -y, --yes           Skip confirmation prompts
 ```
 
@@ -228,6 +243,22 @@ Options:
   -y, --yes           Skip the scope prompt (auto-detect)
 ```
 
+### `link` / `unlink`
+
+```
+agents-skills link [agents...] [options]
+agents-skills unlink [agents...] [options]
+
+Options (link):
+  -g, --global        Link global skills dirs instead of project ones
+      --migrate       Move existing agent skills dirs into the canonical dir
+
+Options (unlink):
+  -g, --global        Unlink global skills dirs instead of project ones
+
+Agents default to auto-detected installed agents; use '*' for all.
+```
+
 ## Project structure
 
 ```
@@ -240,7 +271,8 @@ src/
 │   ├── agents.rs       Agent → skills directory mapping table
 │   ├── discover.rs     SKILL.md discovery + frontmatter parsing
 │   ├── fetch.rs        git clone / HTTP download / archive extraction
-│   ├── install.rs      Install orchestration (canonical + symlink/copy)
+│   ├── install.rs      Install skills into the canonical dir + listing
+│   ├── link.rs         Directory-level agent links (link/unlink/migrate)
 │   └── lock.rs         skills-lock.json read/write + content hashing
 ├── main.rs             Bin entry point (thin CLI over the library)
 ├── cli.rs              clap command tree (commands, aliases, flags)
@@ -248,7 +280,9 @@ src/
     ├── add.rs
     ├── remove.rs
     ├── list.rs
-    └── update.rs
+    ├── update.rs
+    ├── link.rs
+    └── unlink.rs
 
 examples/
 ├── add_skill.rs        Install a skill via the Manager facade (real usage)
@@ -260,6 +294,7 @@ tests/
 ├── cli_add.rs
 ├── cli_remove.rs
 ├── cli_list.rs
+├── cli_link.rs
 └── cli_version.rs
 ```
 
@@ -267,7 +302,7 @@ tests/
 
 ```bash
 cargo build            # build
-cargo test             # run all tests (61 unit + 26 integration)
+cargo test             # run all tests (75 unit + 32 integration)
 cargo run --example manage   # run a library usage example
 cargo clippy           # lint
 cargo fmt              # format
@@ -299,12 +334,18 @@ at your option.
 [`Manager`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html
 [`Manager::add`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add
 [`Manager::add_source`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add_source
+[`Manager::link`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.link
+[`Manager::unlink`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.unlink
 [`Manager::list`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.list
 [`Manager::remove`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.remove
 [`Manager::update`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.update
 [`ManagerBuilder`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ManagerBuilder.html
 [`AddRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddRequest.html
 [`AddOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddOutcome.html
+[`LinkRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.LinkRequest.html
+[`LinkManagerOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.LinkManagerOutcome.html
+[`UnlinkRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UnlinkRequest.html
+[`UnlinkManagerOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UnlinkManagerOutcome.html
 [`ListRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListRequest.html
 [`ListedSkill`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListedSkill.html
 [`RemoveRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveRequest.html
@@ -316,7 +357,9 @@ at your option.
 [`discover_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.discover_skills.html
 [`filter_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.filter_skills.html
 [`parse_skill_md`]: https://docs.rs/agents-skills/latest/agents_skills/fn.parse_skill_md.html
-[`install_skill_for_agent`]: https://docs.rs/agents-skills/latest/agents_skills/fn.install_skill_for_agent.html
+[`install_skill`]: https://docs.rs/agents-skills/latest/agents_skills/fn.install_skill.html
+[`link_agent`]: https://docs.rs/agents-skills/latest/agents_skills/fn.link_agent.html
+[`unlink_agent`]: https://docs.rs/agents-skills/latest/agents_skills/fn.unlink_agent.html
 [`list_installed_skills`]: https://docs.rs/agents-skills/latest/agents_skills/fn.list_installed_skills.html
 [`sanitize_name`]: https://docs.rs/agents-skills/latest/agents_skills/fn.sanitize_name.html
 [`read_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/fn.read_local_lock.html

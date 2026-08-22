@@ -1,7 +1,9 @@
-//! agent → skills directory mapping table (static data).
+//! agent → skills directory mapping table (static data) + directory resolution.
 //!
 //! Data-driven design: one config line per agent; detection/dir resolution goes through the
 //! injectable [`Env`], making unit tests easy (build a temp dir, no touching the real environment).
+//! This module is the single source of truth for *where* skills live: the canonical dir
+//! ([`canonical_skills_dir`]) and each agent's own skills dir ([`agent_skills_dir`]).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -733,18 +735,30 @@ pub fn universal_agents() -> Vec<&'static Agent> {
         .collect()
 }
 
-/// Agents not using the common dir (need symlinks). Used by remove/update.
-#[allow(dead_code)]
-pub fn non_universal_agents() -> Vec<&'static Agent> {
-    AGENTS.iter().filter(|a| !a.is_universal()).collect()
-}
-
 /// An agent's global skills dir (None when global is unsupported).
 pub fn global_skills_dir(agent: &Agent, env: &Env) -> Option<PathBuf> {
     match agent.global {
         GlobalDir::Home(p) => Some(env.home.join(p)),
         GlobalDir::Config(p) => Some(env.config.join(p)),
         GlobalDir::Env(key, p) => Some(env_home(key, env).join(p)),
+    }
+}
+
+/// Canonical skills dir: `(global ? home : cwd)/.agents/skills`.
+pub fn canonical_skills_dir(global: bool, env: &Env) -> PathBuf {
+    let base = if global { &env.home } else { &env.cwd };
+    base.join(UNIVERSAL_SKILLS_DIR)
+}
+
+/// An agent's own skills dir (`None` for universal agents: canonical is their dir).
+pub fn agent_skills_dir(agent: &Agent, global: bool, env: &Env) -> Option<PathBuf> {
+    if agent.is_universal() {
+        return None;
+    }
+    if global {
+        global_skills_dir(agent, env)
+    } else {
+        Some(env.cwd.join(agent.skills_dir))
     }
 }
 
@@ -855,14 +869,6 @@ mod tests {
         assert!(!names.contains(&"dexto"));
         assert!(!names.contains(&"universal"));
         assert!(names.contains(&"amp"));
-    }
-
-    #[test]
-    fn non_universal_agents_need_symlinks() {
-        let names: Vec<&str> = non_universal_agents().iter().map(|a| a.name).collect();
-        assert!(names.contains(&"claude-code"));
-        assert!(names.contains(&"windsurf"));
-        assert!(!names.contains(&"amp"));
     }
 
     #[test]

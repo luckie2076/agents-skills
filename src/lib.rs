@@ -27,14 +27,11 @@
 //!
 //! The crate root exposes only the high-level [`Manager`] facade, its request/outcome types,
 //! and the unified [`error`] types. Lower-level primitives (source parsing, agent directories,
-//! SKILL.md discovery, install, lock) live under [`core`] and are accessed as
+//! SKILL.md discovery, install, agent links, lock) live under [`core`] and are accessed as
 //! `agents_skills::core::...`.
 
 #![warn(missing_docs)]
 #![warn(rustdoc::broken_intra_doc_links)]
-
-//! # Guide
-#![doc = include_str!("../GUIDE.md")]
 
 pub mod core;
 pub mod error;
@@ -42,9 +39,14 @@ pub mod manager;
 
 // High-level facade.
 pub use manager::{
-    AddOutcome, AddRequest, InstallFailure, InstallSuccess, ListRequest, ListedSkill, Manager,
-    ManagerBuilder, RemoveOutcome, RemoveRequest, Scope, UpdateOutcome, UpdateRequest,
+    AddOutcome, AddRequest, AgentLinkResult, AgentUnlinkResult, InstallFailure, InstallSuccess,
+    LinkManagerOutcome, LinkRequest, LinkStatus, ListRequest, ListedSkill, Manager, ManagerBuilder,
+    RemoveOutcome, RemoveRequest, Scope, UnlinkManagerOutcome, UnlinkRequest, UpdateOutcome,
+    UpdateRequest,
 };
+
+// Link/unlink outcome enums (surfaced by the facade's link result types).
+pub use core::link::{LinkOutcome, UnlinkOutcome};
 
 // Errors.
 pub use error::{Error, Result, SkillsError};

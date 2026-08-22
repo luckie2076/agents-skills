@@ -1,7 +1,7 @@
 //! list: list installed skills (project/global, `--json`, `-a` agent filter).
 
 use crate::cli::{BOLD, CYAN, DIM, ListArgs, RESET, YELLOW};
-use crate::commands::fail_agents;
+use crate::commands::{fail_agents, shorten_path};
 use agents_skills::core::agents::Env;
 use agents_skills::error::Result;
 use agents_skills::{ListRequest, ListedSkill, Manager};
@@ -41,6 +41,23 @@ pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
         print_skill(skill, manager.env());
     }
     println!();
+
+    // Agent link status.
+    let statuses = manager.link_status(args.global);
+    if !statuses.is_empty() {
+        println!("{BOLD}Agents{RESET}");
+        for s in &statuses {
+            if s.linked {
+                println!("  {DIM}•{RESET} {} {DIM}(canonical dir){RESET}", s.display);
+            } else {
+                println!(
+                    "  {YELLOW}!{RESET} {} {DIM}(not linked — run `agents-skills link`){RESET}",
+                    s.display
+                );
+            }
+        }
+        println!();
+    }
     Ok(())
 }
 
@@ -64,27 +81,4 @@ fn format_list(items: &[String]) -> String {
         let shown = &items[..MAX];
         format!("{} +{} more", shown.join(", "), items.len() - MAX)
     }
-}
-
-fn shorten_path(path: &std::path::Path, env: &Env) -> String {
-    let full = path.to_string_lossy();
-    let home_s = env.home.to_string_lossy();
-    let cwd_s = env.cwd.to_string_lossy();
-    if full == home_s {
-        return "~".to_string();
-    }
-    if let Some(rest) = full.strip_prefix(&*home_s)
-        && (rest.starts_with('/') || rest.starts_with('\\'))
-    {
-        return format!("~{rest}");
-    }
-    if full == cwd_s {
-        return ".".to_string();
-    }
-    if let Some(rest) = full.strip_prefix(&*cwd_s)
-        && (rest.starts_with('/') || rest.starts_with('\\'))
-    {
-        return format!(".{rest}");
-    }
-    full.to_string()
 }

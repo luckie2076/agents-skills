@@ -50,6 +50,8 @@ fn main() {
         Some(Command::Remove(r)) => commands::remove::run(&manager, r),
         Some(Command::List(l)) => commands::list::run(&manager, l),
         Some(Command::Update(u)) => commands::update::run(&manager, u),
+        Some(Command::Link(l)) => commands::link::run(&manager, l),
+        Some(Command::Unlink(u)) => commands::unlink::run(&manager, u),
         None => Ok(()),
     };
 
