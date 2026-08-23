@@ -59,6 +59,28 @@ impl Source {
             skill_filter: None,
         }
     }
+
+    /// Whole-repo archive URL for hosts that publish tarballs without a git clone
+    /// (GitHub codeload, GitLab). `None` when the archive would need a ref we cannot
+    /// resolve (e.g. GitLab without an explicit branch/tag).
+    pub fn archive_url(&self) -> Option<String> {
+        match self.ty {
+            SourceType::Github => {
+                // `HEAD` resolves to the default branch on codeload.
+                let r = self.r#ref.clone().unwrap_or_else(|| "HEAD".to_string());
+                Some(format!(
+                    "https://codeload.github.com/{}/zip/{r}",
+                    owner_repo(&self.url)
+                ))
+            }
+            SourceType::Gitlab => {
+                let r = self.r#ref.clone()?;
+                let base = self.url.trim_end_matches(".git");
+                Some(format!("{base}/-/archive/{r}/{r}.zip"))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Reject subpaths containing `..` segments to prevent path traversal.
@@ -459,5 +481,42 @@ mod tests {
     fn unsafe_subpath_is_rejected() {
         assert!(parse_source("acme/skills/a/../b").is_err());
         assert!(parse_source("https://github.com/x/y/tree/main/a/../b").is_err());
+    }
+
+    #[test]
+    fn archive_url_github_default_branch() {
+        let s = parse_source("acme/skills").unwrap();
+        assert_eq!(
+            s.archive_url().as_deref(),
+            Some("https://codeload.github.com/acme/skills/zip/HEAD")
+        );
+    }
+
+    #[test]
+    fn archive_url_github_with_ref() {
+        let s = parse_source("https://github.com/acme/skills/tree/main").unwrap();
+        assert_eq!(
+            s.archive_url().as_deref(),
+            Some("https://codeload.github.com/acme/skills/zip/main")
+        );
+    }
+
+    #[test]
+    fn archive_url_gitlab_with_ref() {
+        let s = parse_source("https://gitlab.com/group/sub/repo/-/tree/main").unwrap();
+        assert_eq!(
+            s.archive_url().as_deref(),
+            Some("https://gitlab.com/group/sub/repo/-/archive/main/main.zip")
+        );
+    }
+
+    #[test]
+    fn archive_url_none_without_ref_or_for_other_types() {
+        // GitLab without a ref cannot resolve a default branch for the archive.
+        let s = parse_source("https://gitlab.com/group/sub/repo").unwrap();
+        assert_eq!(s.archive_url(), None);
+        // Well-known / download sources do not use archive URLs.
+        let s = parse_source("https://example.com/x.zip").unwrap();
+        assert_eq!(s.archive_url(), None);
     }
 }

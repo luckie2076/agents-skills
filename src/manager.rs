@@ -13,7 +13,8 @@ use crate::core::agents::{
     ensure_universal_agents, get_agent, home, is_installed,
 };
 use crate::core::discover::{Skill, discover_skills, filter_skills};
-use crate::core::fetch::{clone_repo, download_and_extract};
+use crate::core::fetch::fetch_source;
+use crate::core::github::fetch_skill_via_api;
 use crate::core::install::{
     get_canonical_path, install_skill, list_installed_skills, sanitize_name, scan_installed,
 };
@@ -139,51 +140,52 @@ impl Manager {
     ///   [`SkillsError::Zip`], etc. for transport and filesystem failures.
     pub fn add(&self, req: &AddRequest) -> Result<AddOutcome> {
         let parsed = parse_source(&req.source)?;
-        let include_internal = !req.skills.is_empty();
+        // `@skill` in the source is an explicit selection, like `--skill`.
+        let include_internal = !req.skills.is_empty() || parsed.skill_filter.is_some();
 
         // Fetch skills (the temp dir is held until install finishes).
         let skills: Vec<Skill>;
         let _temp: Option<tempfile::TempDir>;
-        match parsed.ty {
-            SourceType::Local => {
-                let path = parsed
-                    .local_path
-                    .as_ref()
-                    .ok_or_else(|| SkillsError::msg("local source missing path"))?;
-                if !path.exists() {
-                    return Err(SkillsError::msg(format!(
-                        "Local path does not exist: {}",
-                        path.display()
-                    )));
-                }
-                skills = discover_skills(
-                    path,
-                    parsed.subpath.as_deref(),
-                    req.full_depth,
-                    include_internal,
-                )?;
-                _temp = None;
+        if parsed.ty == SourceType::Local {
+            let path = parsed
+                .local_path
+                .as_ref()
+                .ok_or_else(|| SkillsError::msg("local source missing path"))?;
+            if !path.exists() {
+                return Err(SkillsError::msg(format!(
+                    "Local path does not exist: {}",
+                    path.display()
+                )));
             }
-            SourceType::Download | SourceType::WellKnown => {
-                let (t, root) = download_and_extract(&parsed.url)?;
-                skills = discover_skills(
-                    &root,
-                    parsed.subpath.as_deref(),
-                    req.full_depth,
-                    include_internal,
-                )?;
-                _temp = Some(t);
-            }
-            _ => {
-                let tmp = clone_repo(&parsed.url, parsed.r#ref.as_deref())?;
-                skills = discover_skills(
-                    tmp.path(),
-                    parsed.subpath.as_deref(),
-                    req.full_depth,
-                    include_internal,
-                )?;
-                _temp = Some(tmp);
-            }
+            skills = discover_skills(
+                path,
+                parsed.subpath.as_deref(),
+                req.full_depth,
+                include_internal,
+            )?;
+            _temp = None;
+        } else {
+            // `@skill` install: fetch only the matching subdir via the GitHub API
+            // when possible; fall back to the whole-repo archive on any failure.
+            let fast: Option<(tempfile::TempDir, PathBuf)> =
+                if let (Some(name), false) = (parsed.skill_filter.as_deref(), req.list_only) {
+                    fetch_skill_via_api(&parsed, name, include_internal)
+                        .ok()
+                        .flatten()
+                } else {
+                    None
+                };
+            let (tmp, root) = match fast {
+                Some(v) => v,
+                None => fetch_source(&parsed)?,
+            };
+            skills = discover_skills(
+                &root,
+                parsed.subpath.as_deref(),
+                req.full_depth,
+                include_internal,
+            )?;
+            _temp = Some(tmp);
         }
 
         if skills.is_empty() {
@@ -204,11 +206,12 @@ impl Manager {
             });
         }
 
-        // Select skills.
-        let selected: Vec<Skill> = if req.skills.iter().any(|s| s == "*") {
+        // Select skills. `--skill` args and the source's `@skill` filter both count.
+        let filters = skill_filters(&req.skills, parsed.skill_filter.as_deref());
+        let selected: Vec<Skill> = if filters.iter().any(|s| s == "*") {
             skills.clone()
-        } else if !req.skills.is_empty() {
-            filter_skills(&skills, &req.skills)
+        } else if !filters.is_empty() {
+            filter_skills(&skills, &filters)
         } else {
             skills.clone()
         };
@@ -586,11 +589,11 @@ impl Manager {
         for (source, items) in &by_source {
             let first = &items[0].1;
             let clone_url = first.source_url.clone().unwrap_or_else(|| source.clone());
-            let r#ref = first.r#ref.clone();
             let parsed = parse_source(&clone_url)?;
 
-            let tmp = match clone_repo(&parsed.url, r#ref.as_deref()) {
-                Ok(t) => t,
+            // Fetch per source type (archive for github/gitlab/download, clone for git).
+            let fetched = match fetch_source(&parsed) {
+                Ok(v) => v,
                 Err(e) => {
                     for (name, _) in items {
                         outcome.failures.push(format!("{name}: {e}"));
@@ -599,7 +602,7 @@ impl Manager {
                     continue;
                 }
             };
-            let discovered = discover_skills(tmp.path(), parsed.subpath.as_deref(), true, true)
+            let discovered = discover_skills(&fetched.1, parsed.subpath.as_deref(), true, true)
                 .unwrap_or_default();
 
             for (name, entry) in items {
@@ -953,6 +956,15 @@ fn resolve_target_agents(names: &[String], env: &Env) -> Result<Vec<&'static Age
     Ok(ensure_universal_agents(installed))
 }
 
+/// Combine `--skill` args with the source's `@skill` filter into one selection list.
+fn skill_filters(skills: &[String], skill_filter: Option<&str>) -> Vec<String> {
+    let mut filters = skills.to_vec();
+    if let Some(sf) = skill_filter {
+        filters.push(sf.to_string());
+    }
+    filters
+}
+
 /// Match a discovered skill by sanitized name or skillPath directory name.
 fn find_skill<'a>(
     discovered: &'a [Skill],
@@ -1118,6 +1130,17 @@ mod tests {
         assert!(matches_skill("pdf", &filter));
         assert!(!matches_skill("git", &filter));
         assert!(matches_skill("anything", &[]));
+    }
+
+    #[test]
+    fn skill_filters_merges_args_and_at_filter() {
+        assert_eq!(skill_filters(&[], Some("pdf")), vec!["pdf"]);
+        assert_eq!(skill_filters(&["x".to_string()], None), vec!["x"]);
+        assert_eq!(
+            skill_filters(&["x".to_string()], Some("pdf")),
+            vec!["x", "pdf"]
+        );
+        assert!(skill_filters(&[], None).is_empty());
     }
 
     #[test]

@@ -5,39 +5,102 @@
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use git2::FetchOptions;
 use git2::build::{CheckoutBuilder, RepoBuilder};
 
+use crate::core::source::{Source, SourceType};
 use crate::error::{Result, SkillsError};
+
+/// Shared HTTP agent: honors `HTTP(S)_PROXY` / `ALL_PROXY` env vars (opt-in via the
+/// `proxy-from-env` feature) so proxied networks can reach GitHub.
+pub(crate) fn agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        ureq::AgentBuilder::new()
+            .try_proxy_from_env(true)
+            .build()
+    })
+}
+
+/// Run `f` up to `attempts` times with exponential backoff between failures
+/// (150ms, 300ms, ...). Used around network calls to survive transient drops.
+pub(crate) fn with_retry<T>(attempts: usize, mut f: impl FnMut() -> Result<T>) -> Result<T> {
+    let mut last: Option<SkillsError> = None;
+    for i in 0..attempts {
+        match f() {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                last = Some(e);
+                if i + 1 < attempts {
+                    std::thread::sleep(std::time::Duration::from_millis(150 * (1 << i)));
+                }
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| SkillsError::msg("retry exhausted")))
+}
+
+/// Fetch a non-local source into a temp dir, returning `(temp, root path)`.
+///
+/// GitHub / GitLab sources download the whole-repo archive (codeload / GitLab
+/// `/-/archive`) instead of a git clone; only generic git / SSH URLs and GitLab
+/// sources without a resolvable ref fall back to a shallow clone. The caller
+/// holds the returned `TempDir` until install finishes.
+pub fn fetch_source(parsed: &Source) -> Result<(tempfile::TempDir, std::path::PathBuf)> {
+    match parsed.ty {
+        SourceType::Github | SourceType::Gitlab => {
+            if let Some(url) = parsed.archive_url() {
+                return download_and_extract(&url);
+            }
+            let tmp = clone_repo(&parsed.url, parsed.r#ref.as_deref())?;
+            let root = tmp.path().to_path_buf();
+            Ok((tmp, root))
+        }
+        SourceType::Download | SourceType::WellKnown => download_and_extract(&parsed.url),
+        SourceType::Git => {
+            let tmp = clone_repo(&parsed.url, parsed.r#ref.as_deref())?;
+            let root = tmp.path().to_path_buf();
+            Ok((tmp, root))
+        }
+        SourceType::Local => Err(SkillsError::msg(
+            "local sources are handled by the caller, not fetch_source",
+        )),
+    }
+}
 
 /// Shallow-clone a git repo into a temp dir; checkout `reference` when it is a branch/tag.
 pub fn clone_repo(url: &str, reference: Option<&str>) -> Result<tempfile::TempDir> {
-    let tmp = tempfile::TempDir::new()?;
-
-    let mut builder = RepoBuilder::new();
-    let mut fetch_opts = FetchOptions::new();
-    fetch_opts.depth(1);
-    builder.fetch_options(fetch_opts);
-    if let Some(r) = reference {
-        builder.branch(r);
-    }
-    // The local file:// transport does not support shallow fetch; fall back to non-shallow on failure.
-    if builder.clone(url, tmp.path()).is_err() {
+    // Each attempt uses a fresh temp dir: a partial clone leaves a non-empty dir
+    // that a retry could not clone into.
+    let attempt = || -> Result<tempfile::TempDir> {
+        let tmp = tempfile::TempDir::new()?;
         let mut builder = RepoBuilder::new();
+        let mut fetch_opts = FetchOptions::new();
+        fetch_opts.depth(1);
+        builder.fetch_options(fetch_opts);
         if let Some(r) = reference {
             builder.branch(r);
         }
-        builder.clone(url, tmp.path())?;
-    }
+        // The local file:// transport does not support shallow fetch; fall back to non-shallow on failure.
+        if builder.clone(url, tmp.path()).is_err() {
+            let mut builder = RepoBuilder::new();
+            if let Some(r) = reference {
+                builder.branch(r);
+            }
+            builder.clone(url, tmp.path())?;
+        }
 
-    // After a shallow clone the branch may not be explicitly checked out; ensure the working tree is usable.
-    if let Ok(repo) = git2::Repository::open(tmp.path())
-        && let Some(r) = reference
-    {
-        let _ = checkout_ref(&repo, r);
-    }
-    Ok(tmp)
+        // After a shallow clone the branch may not be explicitly checked out; ensure the working tree is usable.
+        if let Ok(repo) = git2::Repository::open(tmp.path())
+            && let Some(r) = reference
+        {
+            let _ = checkout_ref(&repo, r);
+        }
+        Ok(tmp)
+    };
+    with_retry(3, attempt)
 }
 
 fn checkout_ref(repo: &git2::Repository, reference: &str) -> Result<()> {
@@ -53,11 +116,15 @@ fn checkout_ref(repo: &git2::Repository, reference: &str) -> Result<()> {
 fn download_to_file(url: &str) -> Result<(tempfile::TempDir, PathBuf)> {
     let tmp = tempfile::TempDir::new()?;
     let file = tmp.path().join("download");
-    let resp = ureq::get(url).call()?;
-    let mut reader = resp.into_reader();
-    let mut buf = Vec::new();
-    reader.read_to_end(&mut buf)?;
-    std::fs::write(&file, &buf)?;
+    let attempt = || -> Result<()> {
+        let resp = agent().get(url).call()?;
+        let mut reader = resp.into_reader();
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        std::fs::write(&file, &buf)?;
+        Ok(())
+    };
+    with_retry(3, attempt)?;
     Ok((tmp, file))
 }
 
@@ -225,6 +292,42 @@ mod tests {
         // A local file:// cannot be handled directly by ureq; this only verifies the helper for single-file copying.
         assert_eq!(file_name_from_url("https://x/y/SKILL.md?a=b"), "SKILL.md");
         assert_eq!(file_name_from_url("https://x/y/"), "SKILL.md");
+    }
+
+    #[test]
+    fn fetch_source_rejects_local() {
+        // Local sources are handled inline by the caller (manager).
+        let s = crate::core::source::parse_source("./x").unwrap();
+        assert!(matches!(
+            fetch_source(&s),
+            Err(SkillsError::Message(_))
+        ));
+    }
+
+    #[test]
+    fn with_retry_succeeds_after_failures() {
+        let mut calls = 0;
+        let r = with_retry(3, || -> Result<i32> {
+            calls += 1;
+            if calls < 3 {
+                Err(SkillsError::msg("boom"))
+            } else {
+                Ok(42)
+            }
+        });
+        assert_eq!(r.unwrap(), 42);
+        assert_eq!(calls, 3);
+    }
+
+    #[test]
+    fn with_retry_exhausts_after_attempts() {
+        let mut calls = 0;
+        let r = with_retry(2, || -> Result<i32> {
+            calls += 1;
+            Err(SkillsError::msg("boom"))
+        });
+        assert!(r.is_err());
+        assert_eq!(calls, 2);
     }
 
     #[test]

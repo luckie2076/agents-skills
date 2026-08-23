@@ -59,14 +59,17 @@ fn render(env: &Env, req: &AddRequest, outcome: &AddOutcome) {
     }
 
     // Selection message.
+    let at_filter = outcome.source.skill_filter.clone();
     if req.skills.iter().any(|s| s == "*") {
         println!("Installing all {} skills", outcome.skills.len());
-    } else if !req.skills.is_empty() {
+    } else if !req.skills.is_empty() || at_filter.is_some() {
         if outcome.selected.is_empty() {
-            println!(
-                "{RED}No matching skills found for: {}{RESET}",
+            let names = if !req.skills.is_empty() {
                 req.skills.join(", ")
-            );
+            } else {
+                at_filter.unwrap_or_default()
+            };
+            println!("{RED}No matching skills found for: {}{RESET}", names);
             println!("Available skills:");
             for s in &outcome.skills {
                 println!("  - {}", s.name);

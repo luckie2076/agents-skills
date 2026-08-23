@@ -5,6 +5,7 @@
 pub mod agents;
 pub mod discover;
 pub mod fetch;
+pub mod github;
 pub mod install;
 pub mod link;
 pub mod lock;
