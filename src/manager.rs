@@ -342,8 +342,13 @@ impl Manager {
     /// Only agents detected as installed locally (or already linked) are reported.
     /// Agents that natively read the canonical dir (universal) report `canonical`;
     /// agents connected via a directory-level symlink report `linked`.
+    ///
+    /// Ordering: agents that natively use the canonical dir (`canonical: true`)
+    /// come first, then the remaining agents — both groups keep the static agent
+    /// table order. This is the exact order `link --status` renders; callers do
+    /// not need to sort again.
     pub fn link_status(&self, global: bool) -> Vec<LinkStatus> {
-        AGENTS
+        let mut statuses: Vec<LinkStatus> = AGENTS
             .iter()
             .filter(|a| {
                 is_installed(a, &self.env)
@@ -355,7 +360,10 @@ impl Manager {
                 linked: is_agent_linked(a, global, &self.env),
                 canonical: a.is_universal(),
             })
-            .collect()
+            .collect();
+        // Stable sort: canonical agents first, others keep table order.
+        statuses.sort_by_key(|s| !s.canonical);
+        statuses
     }
 
     /// List installed skills (project or global), enriched with lock metadata.

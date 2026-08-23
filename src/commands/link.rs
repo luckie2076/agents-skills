@@ -36,10 +36,8 @@ fn render_status(manager: &Manager, global: bool) {
     let scope = if global { "global" } else { "project" };
     println!("{BOLD}Agent link status ({scope}){RESET}");
     println!();
-    let mut statuses = manager.link_status(global);
-    // Agents that natively use the canonical dir go first; others keep table order.
-    statuses.sort_by_key(|s| !s.canonical);
-    for s in statuses {
+    // Order comes from the library: canonical agents first, others keep table order.
+    for s in manager.link_status(global) {
         if s.canonical {
             println!("  {DIM}•{RESET} {} {DIM}(canonical dir){RESET}", s.display);
         } else if s.linked {

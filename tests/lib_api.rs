@@ -178,6 +178,39 @@ fn lib_link_status_reports_canonical_and_linked() {
 }
 
 #[test]
+fn lib_link_status_orders_canonical_first() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().join("home");
+    let cwd = tmp.path().join("project");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    // claude-code (non-canonical) precedes codex in the static agent table, so
+    // this fixture proves the canonical-first ordering rather than a coincidence.
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+
+    let manager = Manager::builder()
+        .home(home.clone())
+        .config(tmp.path().join("config"))
+        .cwd(cwd.clone())
+        .build();
+
+    manager
+        .link(&LinkRequest {
+            agents: vec!["claude-code".to_string()],
+            global: true,
+            ..Default::default()
+        })
+        .unwrap();
+
+    let statuses = manager.link_status(true);
+    let names: Vec<&str> = statuses.iter().map(|s| s.name.as_str()).collect();
+    // canonical (universal) agents come first; the rest keep table order.
+    assert_eq!(names, vec!["codex", "claude-code"]);
+}
+
+#[test]
 fn lib_list_agent_filter_and_visibility() {
     let tmp = tempfile::TempDir::new().unwrap();
     let cwd = tmp.path().join("project");

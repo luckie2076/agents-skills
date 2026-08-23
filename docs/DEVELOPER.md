@@ -94,6 +94,10 @@ CLI 的 `link --status` 即其渲染。两种"可见"状态含义不同：
 只报告"已安装或已链接"的 agent：未安装且未链接的非 universal agent、以及未安装的
 universal agent 都不会出现在结果里。
 
+顺序保证：`link_status` 返回的顺序与 CLI 的 `link --status` 渲染顺序完全一致——
+`canonical: true`（universal）的 agent 恒在前，其余 agent 在后；两段各自保持静态
+agent 表顺序。CLI 不做二次排序，库调用方也无需自行排序。
+
 每个 agent 的结果在 `LinkManagerOutcome.results` 中，`outcome` 字段为
 [`LinkOutcome`]：`Linked` / `AlreadyLinked` / `Migrated` / `Refused` / `Skipped` /
 `Unlinked` / `NotLinked` / `Failed`。其中 `Refused` 的 `skills` 字段会列出

@@ -106,6 +106,27 @@ fn link_status_prints_installed_agents_and_link_state() {
 }
 
 #[test]
+fn link_status_orders_canonical_agents_first() {
+    let p = TestProject::new();
+    // codex is canonical (universal); claude-code is non-canonical but linked.
+    std::fs::create_dir_all(p.path().join(".codex")).unwrap();
+    std::fs::create_dir_all(p.path().join(".claude")).unwrap();
+    p.skills().args(["link", "claude-code"]).assert().success();
+
+    let out = p
+        .skills()
+        .env("HOME", p.path())
+        .args(["link", "--status"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    // Same order as the library: canonical (universal) agents render first.
+    let codex = stdout.find("Codex").expect("codex listed");
+    let claude = stdout.find("Claude Code").expect("claude listed");
+    assert!(codex < claude);
+}
+
+#[test]
 fn link_status_marks_universal_agents_as_canonical() {
     let p = TestProject::new();
     // Warp is a universal agent (reads `.agents/skills` natively); pretend it's installed.
