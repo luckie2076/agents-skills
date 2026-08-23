@@ -106,7 +106,11 @@ fn fetch_skill_via_api_with(
         }
         let dir = path.strip_suffix("/SKILL.md").unwrap_or_default();
         if path == "SKILL.md" || path.ends_with("/SKILL.md") {
-            let depth = if dir.is_empty() { 0 } else { dir.matches('/').count() + 1 };
+            let depth = if dir.is_empty() {
+                0
+            } else {
+                dir.matches('/').count() + 1
+            };
             candidates.push((depth, dir.to_string()));
         }
     }
@@ -249,7 +253,10 @@ mod tests {
         let files = [
             ("pdf/SKILL.md", "---\nname: pdf\ndescription: d\n---\nbody"),
             ("pdf/scripts/run.sh", "#!/bin/sh\n"),
-            ("skills/doc/SKILL.md", "---\nname: doc\ndescription: d\n---\nbody"),
+            (
+                "skills/doc/SKILL.md",
+                "---\nname: doc\ndescription: d\n---\nbody",
+            ),
         ];
         let get = fake_get("main", &tree, &files);
         let (tmp, root) = fetch_skill_via_api_with(&parsed, "pdf", true, &get)
@@ -270,7 +277,10 @@ mod tests {
         let tree = [("pdf/SKILL.md", "blob"), ("skills/doc/SKILL.md", "blob")];
         let files = [
             ("pdf/SKILL.md", "---\nname: pdf\ndescription: d\n---\nbody"),
-            ("skills/doc/SKILL.md", "---\nname: doc\ndescription: d\n---\nbody"),
+            (
+                "skills/doc/SKILL.md",
+                "---\nname: doc\ndescription: d\n---\nbody",
+            ),
         ];
         let get = fake_get("main", &tree, &files);
         let res = fetch_skill_via_api_with(&parsed, "zzz", true, &get).unwrap();
@@ -290,7 +300,11 @@ mod tests {
     fn fetch_via_api_ignores_non_github() {
         let parsed = parse_source("https://gitlab.com/acme/skills/-/tree/main").unwrap();
         let get = |_: &str| -> Result<Vec<u8>> { unreachable!("no HTTP for non-github") };
-        assert!(fetch_skill_via_api_with(&parsed, "pdf", true, &get).unwrap().is_none());
+        assert!(
+            fetch_skill_via_api_with(&parsed, "pdf", true, &get)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

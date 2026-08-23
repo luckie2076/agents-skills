@@ -17,11 +17,7 @@ use crate::error::{Result, SkillsError};
 /// `proxy-from-env` feature) so proxied networks can reach GitHub.
 pub(crate) fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-    AGENT.get_or_init(|| {
-        ureq::AgentBuilder::new()
-            .try_proxy_from_env(true)
-            .build()
-    })
+    AGENT.get_or_init(|| ureq::AgentBuilder::new().try_proxy_from_env(true).build())
 }
 
 /// Run `f` up to `attempts` times with exponential backoff between failures
@@ -298,10 +294,7 @@ mod tests {
     fn fetch_source_rejects_local() {
         // Local sources are handled inline by the caller (manager).
         let s = crate::core::source::parse_source("./x").unwrap();
-        assert!(matches!(
-            fetch_source(&s),
-            Err(SkillsError::Message(_))
-        ));
+        assert!(matches!(fetch_source(&s), Err(SkillsError::Message(_))));
     }
 
     #[test]
