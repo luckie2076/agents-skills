@@ -16,21 +16,21 @@ CLI 只是同一套公开 Rust API 之上的薄渲染层，两者共享全部能
 ## 快速开始
 
 ```rust
-use agents_skills::{LinkRequest, Manager};
+use agents_skills::{AgentRequest, Manager};
 
 fn main() -> agents_skills::Result<()> {
     // 基于真实环境解析的 Manager（等价于 Manager::new()）
     let manager = Manager::builder().build();
 
     // 1. link: 为所有已安装的 agent 创建指向规范目录的符号链接
-    manager.link(&LinkRequest::default())?;
+    manager.agent(&AgentRequest::default())?;
 
     // 2. 安装技能包（装进规范目录后，所有 agent 立即可见）
     let outcome = manager.add_source("anthropics/skills")?;
     println!("installed {} skill(s)", outcome.installed.len());
 
     // 3. 查看各 agent 的链接状态
-    for s in manager.link_status(false) {
+    for s in manager.agent_status(false) {
         println!("{}: linked={} canonical={}", s.name, s.linked, s.canonical);
     }
     Ok(())
@@ -48,30 +48,30 @@ fn main() -> agents_skills::Result<()> {
 
 ```rust
 // 链接所有已安装 agent（项目级）
-manager.link(&LinkRequest::default())?;
+manager.agent(&AgentRequest::default())?;
 
 // 只链接指定 agent
-manager.link(&LinkRequest {
+manager.agent(&AgentRequest {
     agents: vec!["claude-code".into()],
     ..Default::default()
 })?;
 
 // 链接并迁移存量技能（--migrate）
-manager.link(&LinkRequest {
+manager.agent(&AgentRequest {
     agents: vec!["claude-code".into()],
     migrate: true,
     ..Default::default()
 })?;
 
 // 解除链接（--unlink）：移除符号链接并重建空目录；规范目录与技能不受影响
-manager.link(&LinkRequest {
+manager.agent(&AgentRequest {
     agents: vec!["claude-code".into()],
     unlink: true,
     ..Default::default()
 })?;
 
 // 查看各 agent 的链接状态（--status，只读）
-for s in manager.link_status(false) {
+for s in manager.agent_status(false) {
     if s.canonical {
         println!("{} -> canonical dir", s.display);
     } else if s.linked {
@@ -82,7 +82,7 @@ for s in manager.link_status(false) {
 }
 ```
 
-`link_status` 返回 [`LinkStatus`]（`name` / `display` / `linked` / `canonical`），
+`agent_status` 返回 [`AgentStatus`]（`name` / `display` / `linked` / `canonical`），
 CLI 的 `agent --status` 即其渲染。两种"可见"状态含义不同：
 
 - **`canonical: true`** —— 该 agent（universal agent）**原生**就读取规范目录，
@@ -94,11 +94,11 @@ CLI 的 `agent --status` 即其渲染。两种"可见"状态含义不同：
 只报告"已安装或已链接"的 agent：未安装且未链接的非 universal agent、以及未安装的
 universal agent 都不会出现在结果里。
 
-顺序保证：`link_status` 返回的顺序与 CLI 的 `agent --status` 渲染顺序完全一致——
+顺序保证：`agent_status` 返回的顺序与 CLI 的 `agent --status` 渲染顺序完全一致——
 `canonical: true`（universal）的 agent 恒在前，其余 agent 在后；两段各自保持静态
 agent 表顺序。CLI 不做二次排序，库调用方也无需自行排序。
 
-每个 agent 的结果在 `LinkManagerOutcome.results` 中，`outcome` 字段为
+每个 agent 的结果在 `AgentOutcome.results` 中，`outcome` 字段为
 [`LinkOutcome`]：`Linked` / `AlreadyLinked` / `Migrated` / `Refused` / `Skipped` /
 `Unlinked` / `NotLinked` / `Failed`。其中 `Refused` 的 `skills` 字段会列出
 agent 目录内已存在的技能名，CLI 会据此提示用户；`Migrated` 的 `moved`
@@ -236,7 +236,7 @@ manager.enable(&EnableRequest { all: true, ..Default::default() })?;
 | ----------------------- | ------------------- | ----------------------------------------- |
 | [`Manager::add`]        | [`AddRequest`]      | [`AddOutcome`]（已安装 + 链接 + 失败）    |
 | [`Manager::add_source`] | `impl Into<String>` | [`AddOutcome`]（已安装 + 链接 + 失败）    |
-| [`Manager::link`]       | [`LinkRequest`]     | [`LinkManagerOutcome`]（逐 agent 结果；`unlink: true` 断开） |
+| [`Manager::agent`]      | [`AgentRequest`]    | [`AgentOutcome`]（逐 agent 结果；`unlink: true` 断开）       |
 | [`Manager::list`]       | [`ListRequest`]     | `Vec<`[`ListedSkill`]`>`（可序列化）      |
 | [`Manager::remove`]     | [`RemoveRequest`]   | [`RemoveOutcome`]（已移除名称）           |
 | [`Manager::update`]     | [`UpdateRequest`]   | [`UpdateOutcome`]（更新/失败计数）        |
@@ -348,7 +348,7 @@ cargo fmt              # 格式化
 [`Manager`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html
 [`Manager::add`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add
 [`Manager::add_source`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add_source
-[`Manager::link`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.link
+[`Manager::agent`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.agent
 [`Manager::list`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.list
 [`Manager::remove`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.remove
 [`Manager::update`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.update
@@ -357,12 +357,12 @@ cargo fmt              # 格式化
 [`ManagerBuilder`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ManagerBuilder.html
 [`AddRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddRequest.html
 [`AddOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddOutcome.html
-[`LinkRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.LinkRequest.html
-[`LinkManagerOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.LinkManagerOutcome.html
+[`AgentRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentRequest.html
+[`AgentOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentOutcome.html
 [`LinkOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/enum.LinkOutcome.html
 [`ListRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListRequest.html
 [`ListedSkill`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListedSkill.html
-[`LinkStatus`]: https://docs.rs/agents-skills/latest/agents_skills/struct.LinkStatus.html
+[`AgentStatus`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentStatus.html
 [`RemoveRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveRequest.html
 [`RemoveOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveOutcome.html
 [`UpdateRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UpdateRequest.html

@@ -97,7 +97,7 @@ impl Manager {
     /// successful installs in the lockfile. Returns a structured [`AddOutcome`]
     /// with discovered, selected, installed and failed skills.
     ///
-    /// `add` never links any agent: use [`Manager::link`] to expose the canonical
+    /// `add` never links any agent: use [`Manager::agent`] to expose the canonical
     /// dir to an agent afterwards.
     ///
     /// # Selection defaults
@@ -321,7 +321,7 @@ impl Manager {
     /// # Errors
     ///
     /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
-    pub fn link(&self, req: &LinkRequest) -> Result<LinkManagerOutcome> {
+    pub fn agent(&self, req: &AgentRequest) -> Result<AgentOutcome> {
         let target_agents = resolve_target_agents(&req.agents, &self.env)?;
         let results = target_agents
             .iter()
@@ -335,7 +335,7 @@ impl Manager {
                 },
             })
             .collect();
-        Ok(LinkManagerOutcome {
+        Ok(AgentOutcome {
             global: req.global,
             results,
         })
@@ -351,14 +351,14 @@ impl Manager {
     /// come first, then the remaining agents — both groups keep the static agent
     /// table order. This is the exact order `agent --status` renders; callers do
     /// not need to sort again.
-    pub fn link_status(&self, global: bool) -> Vec<LinkStatus> {
-        let mut statuses: Vec<LinkStatus> = AGENTS
+    pub fn agent_status(&self, global: bool) -> Vec<AgentStatus> {
+        let mut statuses: Vec<AgentStatus> = AGENTS
             .iter()
             .filter(|a| {
                 is_installed(a, &self.env)
                     || (!a.is_universal() && is_agent_linked(a, global, &self.env))
             })
-            .map(|a| LinkStatus {
+            .map(|a| AgentStatus {
                 name: a.name.to_string(),
                 display: a.display.to_string(),
                 linked: is_agent_linked(a, global, &self.env),
@@ -451,6 +451,38 @@ impl Manager {
     ///   currently enabled names (used by the CLI to print a hint).
     /// - `all` true → every currently enabled skill.
     ///
+    /// # Examples
+    ///
+    /// Disable an installed skill in a scratch environment (hermetic — no real
+    /// home access):
+    ///
+    /// ```
+    /// use agents_skills::{DisableRequest, Manager};
+    ///
+    /// let tmp = tempfile::TempDir::new().unwrap();
+    /// // Simulate an installed skill in the canonical dir.
+    /// let skill_dir = tmp.path().join("project/.agents/skills/pdf");
+    /// std::fs::create_dir_all(&skill_dir).unwrap();
+    /// std::fs::write(
+    ///     skill_dir.join("SKILL.md"),
+    ///     "---\nname: pdf\ndescription: pdf tools\n---\n\n# pdf\n",
+    /// )
+    /// .unwrap();
+    ///
+    /// let manager = Manager::builder()
+    ///     .home(tmp.path().join("home"))
+    ///     .config(tmp.path().join("config"))
+    ///     .cwd(tmp.path().join("project"))
+    ///     .build();
+    ///
+    /// let outcome = manager.disable(&DisableRequest {
+    ///     skills: vec!["pdf".into()],
+    ///     ..Default::default()
+    /// })?;
+    /// assert_eq!(outcome.disabled, vec!["pdf".to_string()]);
+    /// # Ok::<(), agents_skills::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// [`SkillsError::Io`] if a directory move fails.
@@ -498,6 +530,38 @@ impl Manager {
     ///   currently disabled names (used by the CLI to print a hint).
     /// - `all` true → every currently disabled skill.
     ///
+    /// # Examples
+    ///
+    /// Re-enable a disabled skill in a scratch environment (hermetic — no real
+    /// home access):
+    ///
+    /// ```
+    /// use agents_skills::{EnableRequest, Manager};
+    ///
+    /// let tmp = tempfile::TempDir::new().unwrap();
+    /// // Simulate a disabled skill parked in the disabled-skills dir.
+    /// let skill_dir = tmp.path().join("project/.agents/disabled-skills/pdf");
+    /// std::fs::create_dir_all(&skill_dir).unwrap();
+    /// std::fs::write(
+    ///     skill_dir.join("SKILL.md"),
+    ///     "---\nname: pdf\ndescription: pdf tools\n---\n\n# pdf\n",
+    /// )
+    /// .unwrap();
+    ///
+    /// let manager = Manager::builder()
+    ///     .home(tmp.path().join("home"))
+    ///     .config(tmp.path().join("config"))
+    ///     .cwd(tmp.path().join("project"))
+    ///     .build();
+    ///
+    /// let outcome = manager.enable(&EnableRequest {
+    ///     skills: vec!["pdf".into()],
+    ///     ..Default::default()
+    /// })?;
+    /// assert_eq!(outcome.enabled, vec!["pdf".to_string()]);
+    /// # Ok::<(), agents_skills::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// [`SkillsError::Io`] if a directory move fails.
@@ -537,7 +601,7 @@ impl Manager {
     ///
     /// Deletes each skill's directory from the canonical dir and drops its lockfile
     /// entry. Removal applies to every linked agent at once (they all share the
-    /// canonical dir); agent links themselves are untouched — call [`Manager::link`]
+    /// canonical dir); agent links themselves are untouched — call [`Manager::agent`]
     /// with `unlink: true` to disconnect an agent instead.
     ///
     /// # Selection semantics
@@ -892,11 +956,11 @@ pub struct RemoveRequest {
     pub all: bool,
 }
 
-/// Request for [`Manager::link`] — one entry point mirroring the `link` CLI command.
+/// Request for [`Manager::agent`] — one entry point mirroring the `agent` CLI command.
 ///
 /// `Default` links the auto-detected installed agents at project scope.
 #[derive(Debug, Clone, Default)]
-pub struct LinkRequest {
+pub struct AgentRequest {
     /// `"*"` or specific agent names; empty = auto-detect installed agents.
     pub agents: Vec<String>,
     /// Link global skills dirs instead of project ones.
@@ -1013,7 +1077,7 @@ pub struct AgentLinkResult {
 
 /// Link status of one agent (used by `agent --status`).
 #[derive(Debug)]
-pub struct LinkStatus {
+pub struct AgentStatus {
     /// Agent identifier (as used on the CLI).
     pub name: String,
     /// Agent display name.
@@ -1024,9 +1088,9 @@ pub struct LinkStatus {
     pub canonical: bool,
 }
 
-/// Result of [`Manager::link`].
+/// Result of [`Manager::agent`].
 #[derive(Debug)]
-pub struct LinkManagerOutcome {
+pub struct AgentOutcome {
     /// Whether the links used global scope.
     pub global: bool,
     /// Per-agent link results.

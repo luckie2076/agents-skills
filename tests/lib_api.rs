@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use agents_skills::{
-    AddRequest, LinkRequest, ListRequest, Manager, RemoveRequest, SkillsError, UpdateRequest,
+    AddRequest, AgentRequest, DisableRequest, EnableRequest, ListRequest, Manager, RemoveRequest,
+    SkillsError, UpdateRequest,
 };
 
 fn write_skill_source(root: &Path, rel_dir: &str, name: &str) -> PathBuf {
@@ -93,7 +94,7 @@ fn lib_invalid_agent_returns_error() {
     let manager = Manager::builder().cwd(tmp.path().join("project")).build();
 
     let err = manager
-        .link(&LinkRequest {
+        .agent(&AgentRequest {
             agents: vec!["not-an-agent".to_string()],
             ..Default::default()
         })
@@ -138,7 +139,7 @@ fn lib_list_json_shape() {
 }
 
 #[test]
-fn lib_link_status_reports_canonical_and_linked() {
+fn lib_agent_status_reports_canonical_and_linked() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path().join("home");
     let cwd = tmp.path().join("project");
@@ -157,14 +158,14 @@ fn lib_link_status_reports_canonical_and_linked() {
         .build();
 
     manager
-        .link(&LinkRequest {
+        .agent(&AgentRequest {
             agents: vec!["trae".to_string()],
             global: true,
             ..Default::default()
         })
         .unwrap();
 
-    let statuses = manager.link_status(true);
+    let statuses = manager.agent_status(true);
     let trae = statuses.iter().find(|s| s.name == "trae").unwrap();
     assert!(!trae.canonical);
     assert!(trae.linked);
@@ -178,7 +179,7 @@ fn lib_link_status_reports_canonical_and_linked() {
 }
 
 #[test]
-fn lib_link_status_orders_canonical_first() {
+fn lib_agent_status_orders_canonical_first() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path().join("home");
     let cwd = tmp.path().join("project");
@@ -197,14 +198,14 @@ fn lib_link_status_orders_canonical_first() {
         .build();
 
     manager
-        .link(&LinkRequest {
+        .agent(&AgentRequest {
             agents: vec!["claude-code".to_string()],
             global: true,
             ..Default::default()
         })
         .unwrap();
 
-    let statuses = manager.link_status(true);
+    let statuses = manager.agent_status(true);
     let names: Vec<&str> = statuses.iter().map(|s| s.name.as_str()).collect();
     // canonical (universal) agents come first; the rest keep table order.
     assert_eq!(names, vec!["codex", "claude-code"]);
@@ -268,4 +269,155 @@ fn lib_update_empty_is_noop() {
     let outcome = manager.update(&UpdateRequest::default()).unwrap();
     assert_eq!(outcome.updated, 0);
     assert_eq!(outcome.failed, 0);
+}
+
+#[test]
+fn lib_disable_then_enable_roundtrip() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let cwd = tmp.path().join("project");
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    let manager = Manager::builder()
+        .home(tmp.path().join("home"))
+        .config(tmp.path().join("config"))
+        .cwd(cwd.clone())
+        .build();
+
+    // Add a local skill.
+    let src = write_skill_source(tmp.path(), "src", "pdf");
+    manager
+        .add(&AddRequest {
+            source: src.display().to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Disable: the dir moves out of the canonical dir into disabled-skills.
+    let disabled = manager
+        .disable(&DisableRequest {
+            skills: vec!["pdf".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(disabled.disabled, vec!["pdf".to_string()]);
+    assert!(disabled.already.is_empty());
+    assert!(disabled.missing.is_empty());
+    assert!(!cwd.join(".agents/skills/pdf").exists());
+    assert!(cwd.join(".agents/disabled-skills/pdf/SKILL.md").exists());
+
+    // list reports the skill as disabled.
+    let listed = manager.list(&ListRequest::default()).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(!listed[0].enabled);
+
+    // Enable: the dir moves back into the canonical dir.
+    let enabled = manager
+        .enable(&EnableRequest {
+            skills: vec!["pdf".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(enabled.enabled, vec!["pdf".to_string()]);
+    assert!(cwd.join(".agents/skills/pdf/SKILL.md").exists());
+    assert!(!cwd.join(".agents/disabled-skills/pdf").exists());
+
+    let listed = manager.list(&ListRequest::default()).unwrap();
+    assert!(listed[0].enabled);
+}
+
+#[test]
+fn lib_disable_enable_are_idempotent() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let cwd = tmp.path().join("project");
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    let manager = Manager::builder()
+        .home(tmp.path().join("home"))
+        .config(tmp.path().join("config"))
+        .cwd(cwd.clone())
+        .build();
+
+    let src = write_skill_source(tmp.path(), "src", "pdf");
+    manager
+        .add(&AddRequest {
+            source: src.display().to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Disabling twice: the second call reports "already disabled", not an error.
+    manager
+        .disable(&DisableRequest {
+            skills: vec!["pdf".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    let again = manager
+        .disable(&DisableRequest {
+            skills: vec!["pdf".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(again.disabled.is_empty());
+    assert_eq!(again.already, vec!["pdf".to_string()]);
+
+    // Enabling twice: the second call reports "already enabled".
+    manager
+        .enable(&EnableRequest {
+            skills: vec!["pdf".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    let again = manager
+        .enable(&EnableRequest {
+            skills: vec!["pdf".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(again.enabled.is_empty());
+    assert_eq!(again.already, vec!["pdf".to_string()]);
+
+    // Missing names are reported via `missing`, never errors.
+    let missing = manager
+        .disable(&DisableRequest {
+            skills: vec!["nope".to_string()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(missing.disabled.is_empty());
+    assert!(missing.already.is_empty());
+    assert_eq!(missing.missing, vec!["nope".to_string()]);
+}
+
+#[test]
+fn lib_disable_global_scope_moves_home_skill() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let manager = Manager::builder()
+        .home(home.clone())
+        .config(tmp.path().join("config"))
+        .cwd(tmp.path().join("project"))
+        .build();
+
+    let src = write_skill_source(tmp.path(), "src", "pdf");
+    manager
+        .add(&AddRequest {
+            source: src.display().to_string(),
+            global: true,
+            ..Default::default()
+        })
+        .unwrap();
+
+    manager
+        .disable(&DisableRequest {
+            skills: vec!["pdf".to_string()],
+            global: true,
+            ..Default::default()
+        })
+        .unwrap();
+
+    assert!(!home.join(".agents/skills/pdf").exists());
+    assert!(home.join(".agents/disabled-skills/pdf/SKILL.md").exists());
 }
