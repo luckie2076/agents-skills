@@ -47,6 +47,8 @@ fn main() {
         Some(Command::Remove(r)) => commands::remove::run(&manager, r),
         Some(Command::List(l)) => commands::list::run(&manager, l),
         Some(Command::Update(u)) => commands::update::run(&manager, u),
+        Some(Command::Disable(d)) => commands::disable::run(&manager, d),
+        Some(Command::Enable(e)) => commands::enable::run(&manager, e),
         Some(Command::Link(l)) => commands::link::run(&manager, l),
         None => Ok(()),
     };

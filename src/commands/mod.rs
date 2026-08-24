@@ -4,6 +4,8 @@
 //! Shared rendering helpers (path shortening, link result lines) live in this module.
 
 pub mod add;
+pub mod disable;
+pub mod enable;
 pub mod link;
 pub mod list;
 pub mod remove;

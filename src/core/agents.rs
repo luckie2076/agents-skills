@@ -11,6 +11,9 @@ use std::path::{Path, PathBuf};
 /// The common skills dir shared by most agents.
 pub const UNIVERSAL_SKILLS_DIR: &str = ".agents/skills";
 
+/// The sibling dir where disabled skills are parked (never symlinked to agents).
+pub const DISABLED_SKILLS_DIR: &str = ".agents/disabled-skills";
+
 /// Context for agent detection/dir resolution (owns data, easy to inject in tests).
 pub struct Env {
     /// Home directory (`~`).
@@ -748,6 +751,15 @@ pub fn global_skills_dir(agent: &Agent, env: &Env) -> Option<PathBuf> {
 pub fn canonical_skills_dir(global: bool, env: &Env) -> PathBuf {
     let base = if global { &env.home } else { &env.cwd };
     base.join(UNIVERSAL_SKILLS_DIR)
+}
+
+/// Disabled skills dir: `(global ? home : cwd)/.agents/disabled-skills`.
+///
+/// Disabled skills are moved here, out of the canonical dir, so no agent (linked
+/// or universal) sees them. Enabling moves them back.
+pub fn disabled_skills_dir(global: bool, env: &Env) -> PathBuf {
+    let base = if global { &env.home } else { &env.cwd };
+    base.join(DISABLED_SKILLS_DIR)
 }
 
 /// An agent's own skills dir (`None` for universal agents: canonical is their dir).

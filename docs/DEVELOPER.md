@@ -190,6 +190,34 @@ let outcome = manager.update(&UpdateRequest::default())?;
 println!("updated={} failed={}", outcome.updated, outcome.failed);
 ```
 
+### 禁用/启用技能（disable / enable）
+
+对应 CLI：`agents-skills disable <name> [-g] [--all]` / `agents-skills enable <name> [-g] [--all]`
+
+```rust
+// 禁用：把技能目录移出规范目录，所有 agent 立即不可见（文件完整保留）
+let outcome = manager.disable(&DisableRequest {
+    skills: vec!["pdf".into()],
+    ..Default::default()
+})?;
+println!("disabled: {:?}", outcome.disabled);
+
+// 启用：把技能目录移回规范目录，恢复可见（disable 的逆操作）
+let outcome = manager.enable(&EnableRequest {
+    skills: vec!["pdf".into()],
+    ..Default::default()
+})?;
+println!("enabled: {:?}", outcome.enabled);
+
+// 批量操作
+manager.disable(&DisableRequest { all: true, ..Default::default() })?;
+manager.enable(&EnableRequest { all: true, ..Default::default() })?;
+```
+
+禁用/启用是幂等的：结果中的 `already` 字段列出已经是目标状态的技能，
+`missing` 字段列出未匹配到的技能。lockfile 条目在禁用期间保留，`list`
+仍能展示禁用技能的来源信息（`enabled: false`）；`update` 会跳过禁用技能。
+
 ### 项目级与全局作用域
 
 所有请求结构体都带 `global: bool` 字段，与 CLI 的 `-g/--global` 对应：
@@ -212,6 +240,8 @@ println!("updated={} failed={}", outcome.updated, outcome.failed);
 | [`Manager::list`]       | [`ListRequest`]     | `Vec<`[`ListedSkill`]`>`（可序列化）      |
 | [`Manager::remove`]     | [`RemoveRequest`]   | [`RemoveOutcome`]（已移除名称）           |
 | [`Manager::update`]     | [`UpdateRequest`]   | [`UpdateOutcome`]（更新/失败计数）        |
+| [`Manager::disable`]    | [`DisableRequest`]  | [`DisableOutcome`]（已禁用名称）          |
+| [`Manager::enable`]     | [`EnableRequest`]   | [`EnableOutcome`]（已启用名称）           |
 
 请求结构体均为 `Default + Clone`，可通过字段覆盖构建；结果是纯数据。
 
@@ -239,6 +269,8 @@ let manager = Manager::builder()
   [`core::discover::parse_skill_md`]
 - **安装** —— [`core::install::install_skill`]、[`core::install::list_installed_skills`]、
   [`core::install::sanitize_name`]
+- **禁用/启用** —— [`core::install::move_skill`]、[`core::install::list_disabled_skills`]、
+  [`core::agents::disabled_skills_dir`]
 - **链接** —— [`core::link::link_agent`]、[`core::link::unlink_agent`]、
   [`core::link::is_agent_linked`]
 - **锁文件** —— [`core::lock::read_local_lock`]、[`core::lock::write_local_lock`]、
@@ -268,6 +300,8 @@ src/
     ├── remove.rs
     ├── list.rs
     ├── update.rs
+    ├── disable.rs
+    ├── enable.rs
     └── link.rs
 
 examples/
@@ -281,6 +315,7 @@ tests/
 ├── cli_remove.rs
 ├── cli_list.rs
 ├── cli_link.rs
+├── cli_enable_disable.rs
 └── cli_version.rs
 ```
 
@@ -317,6 +352,8 @@ cargo fmt              # 格式化
 [`Manager::list`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.list
 [`Manager::remove`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.remove
 [`Manager::update`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.update
+[`Manager::disable`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.disable
+[`Manager::enable`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.enable
 [`ManagerBuilder`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ManagerBuilder.html
 [`AddRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddRequest.html
 [`AddOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddOutcome.html
@@ -330,6 +367,10 @@ cargo fmt              # 格式化
 [`RemoveOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveOutcome.html
 [`UpdateRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UpdateRequest.html
 [`UpdateOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.UpdateOutcome.html
+[`DisableRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.DisableRequest.html
+[`DisableOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.DisableOutcome.html
+[`EnableRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.EnableRequest.html
+[`EnableOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.EnableOutcome.html
 [`core::source::parse_source`]: https://docs.rs/agents-skills/latest/agents_skills/core/source/fn.parse_source.html
 [`core::source::owner_repo`]: https://docs.rs/agents-skills/latest/agents_skills/core/source/fn.owner_repo.html
 [`core::discover::discover_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.discover_skills.html
@@ -338,6 +379,9 @@ cargo fmt              # 格式化
 [`core::install::install_skill`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.install_skill.html
 [`core::install::list_installed_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.list_installed_skills.html
 [`core::install::sanitize_name`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.sanitize_name.html
+[`core::install::move_skill`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.move_skill.html
+[`core::install::list_disabled_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.list_disabled_skills.html
+[`core::agents::disabled_skills_dir`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.disabled_skills_dir.html
 [`core::link::link_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.link_agent.html
 [`core::link::unlink_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.unlink_agent.html
 [`core::link::is_agent_linked`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.is_agent_linked.html

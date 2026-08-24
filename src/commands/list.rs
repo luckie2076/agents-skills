@@ -1,6 +1,6 @@
 //! list: list installed skills (project/global, `--json`, `-a` agent filter).
 
-use crate::cli::{BOLD, CYAN, DIM, ListArgs, RESET};
+use crate::cli::{BOLD, CYAN, DIM, GREEN, ListArgs, RESET, YELLOW};
 use crate::commands::{fail_agents, shorten_path};
 use agents_skills::core::agents::Env;
 use agents_skills::error::Result;
@@ -47,6 +47,14 @@ pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
 fn print_skill(skill: &ListedSkill, env: &Env) {
     let short = shorten_path(&skill.path, env);
     let source_label = skill.source.clone().unwrap_or_else(|| "local".to_string());
-    println!("{CYAN}{}{RESET} {DIM}{}{RESET}", skill.name, short);
+    let status = if skill.enabled {
+        format!("{GREEN}enabled{RESET}")
+    } else {
+        format!("{YELLOW}disabled{RESET}")
+    };
+    println!(
+        "{CYAN}{}{RESET} {DIM}{}{RESET} [{status}]",
+        skill.name, short
+    );
     println!("  {DIM}Source:{RESET} {source_label}");
 }

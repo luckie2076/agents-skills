@@ -8,7 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::agents::{Env, canonical_skills_dir, universal_agents};
+use crate::core::agents::{Env, canonical_skills_dir, disabled_skills_dir, universal_agents};
 use crate::core::discover::{Skill, parse_skill_md};
 use crate::error::Result;
 
@@ -252,6 +252,73 @@ pub fn scan_installed(env: &Env, global: bool) -> Vec<String> {
     v
 }
 
+/// Scan the disabled dir, collecting disabled skill directory names.
+pub fn scan_disabled(env: &Env, global: bool) -> Vec<String> {
+    let disabled = disabled_skills_dir(global, env);
+    let mut v: Vec<String> = Vec::new();
+    if let Ok(entries) = fs::read_dir(&disabled) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                v.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+    }
+    v.sort();
+    v
+}
+
+/// List skills parked in the disabled dir. Agents list is empty — they're hidden.
+pub fn list_disabled_skills(env: &Env, global: bool) -> Vec<InstalledSkill> {
+    let scope = if global { "global" } else { "project" };
+    let disabled = disabled_skills_dir(global, env);
+    let mut out: Vec<InstalledSkill> = Vec::new();
+
+    let entries = match fs::read_dir(&disabled) {
+        Ok(e) => e,
+        Err(_) => return out,
+    };
+
+    for entry in entries.flatten() {
+        let skill_dir = entry.path();
+        let skill_md = skill_dir.join("SKILL.md");
+        if !skill_md.is_file() {
+            continue;
+        }
+        let Some(skill) = parse_skill_md(&skill_md) else {
+            continue;
+        };
+        out.push(InstalledSkill {
+            name: skill.name,
+            description: skill.description,
+            canonical_path: skill_dir,
+            scope: scope.to_string(),
+            agents: Vec::new(),
+        });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+/// Move a skill directory between the canonical dir and the disabled dir.
+///
+/// `to_enabled=true` moves `disabled-skills/<name>` → `skills/<name>` (enable);
+/// `to_enabled=false` moves `skills/<name>` → `disabled-skills/<name>` (disable).
+/// The target parent dir is created if needed.
+pub fn move_skill(name: &str, global: bool, to_enabled: bool, env: &Env) -> Result<()> {
+    let canonical = canonical_skills_dir(global, env).join(sanitize_name(name));
+    let disabled = disabled_skills_dir(global, env).join(sanitize_name(name));
+    let (from, to) = if to_enabled {
+        (&disabled, &canonical)
+    } else {
+        (&canonical, &disabled)
+    };
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(from, to)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,5 +450,46 @@ mod tests {
 
         let names = scan_installed(&env, false);
         assert_eq!(names, vec!["pdf".to_string()]);
+    }
+
+    #[test]
+    fn move_skill_disables_then_enables_roundtrip() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = env_at(&tmp);
+        let src = tmp.path().join("src-skill");
+        let skill = write_skill(&src, "pdf");
+        install_skill(&skill, false, &env);
+
+        // Disable: moves out of canonical, into disabled-skills.
+        move_skill("pdf", false, false, &env).unwrap();
+        assert!(!tmp.path().join(".agents/skills/pdf").exists());
+        assert!(
+            tmp.path()
+                .join(".agents/disabled-skills/pdf/SKILL.md")
+                .exists()
+        );
+        assert!(scan_installed(&env, false).is_empty());
+        assert_eq!(scan_disabled(&env, false), vec!["pdf".to_string()]);
+
+        // Enable: moves back.
+        move_skill("pdf", false, true, &env).unwrap();
+        assert!(tmp.path().join(".agents/skills/pdf/SKILL.md").exists());
+        assert!(scan_disabled(&env, false).is_empty());
+    }
+
+    #[test]
+    fn list_disabled_skills_reports_hidden_skills() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = env_at(&tmp);
+        let src = tmp.path().join("src-skill");
+        let skill = write_skill(&src, "pdf");
+        install_skill(&skill, false, &env);
+        move_skill("pdf", false, false, &env).unwrap();
+
+        let disabled = list_disabled_skills(&env, false);
+        assert_eq!(disabled.len(), 1);
+        assert_eq!(disabled[0].name, "pdf");
+        assert!(disabled[0].agents.is_empty());
+        assert_eq!(disabled[0].scope, "project");
     }
 }

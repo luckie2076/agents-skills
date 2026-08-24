@@ -97,6 +97,20 @@ agents-skills remove --all     # 移除全部技能
 agents-skills update
 ```
 
+### 禁用/启用技能（disable / enable）
+
+本质：把技能目录在规范目录与平级的 `.agents/disabled-skills/` 之间移动。
+禁用后技能对所有 agent 立即不可见（文件完整保留），启用即无损恢复。
+`list` 始终展示全部技能并标注 `enabled`/`disabled` 状态；已禁用的技能
+`update` 会跳过、保持禁用。
+
+```bash
+agents-skills disable pdf            # 禁用指定技能
+agents-skills enable pdf             # 重新启用指定技能
+agents-skills disable --all          # 禁用全部已启用技能
+agents-skills enable --all           # 启用全部已禁用技能
+```
+
 ### 项目级与全局作用域
 
 本质：技能只在规范目录保存一份，`-g/--global` 决定这份副本属于当前项目
@@ -128,13 +142,15 @@ agents-skills update
 
 ### 命令速查表
 
-| 命令     | 别名                | 说明                                |
-| -------- | ------------------- | ----------------------------------- |
-| `add`    | `a`, `i`, `install` | 从来源安装技能包                    |
-| `remove` | `rm`, `r`           | 移除已安装技能                      |
-| `list`   | `ls`                | 列出已安装技能                      |
-| `update` | `upgrade`, `check`  | 将技能更新到最新版本                |
-| `link`   | `ln`                | 链接/解除链接/查看 agent 链接状态   |
+| 命令      | 别名                | 说明                                |
+| --------- | ------------------- | ----------------------------------- |
+| `add`     | `a`, `i`, `install` | 从来源安装技能包                    |
+| `remove`  | `rm`, `r`           | 移除已安装技能                      |
+| `list`    | `ls`                | 列出已安装技能                      |
+| `update`  | `upgrade`, `check`  | 将技能更新到最新版本                |
+| `disable` | `d`                 | 禁用已安装技能                      |
+| `enable`  | `e`                 | 重新启用已禁用的技能                |
+| `link`    | `ln`                | 链接/解除链接/查看 agent 链接状态   |
 
 > 完整的命令行参数（每个命令的选项与更多示例）见 [docs/CLI.md](docs/CLI.md)。
 > 开发者（库接口使用说明、项目结构、开发流程）见 [docs/DEVELOPER.md](docs/DEVELOPER.md)。

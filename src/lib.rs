@@ -39,9 +39,10 @@ pub mod manager;
 
 // High-level facade.
 pub use manager::{
-    AddOutcome, AddRequest, AgentLinkResult, InstallFailure, InstallSuccess, LinkManagerOutcome,
-    LinkRequest, LinkStatus, ListRequest, ListedSkill, Manager, ManagerBuilder, RemoveOutcome,
-    RemoveRequest, Scope, UpdateOutcome, UpdateRequest,
+    AddOutcome, AddRequest, AgentLinkResult, DisableOutcome, DisableRequest, EnableOutcome,
+    EnableRequest, InstallFailure, InstallSuccess, LinkManagerOutcome, LinkRequest, LinkStatus,
+    ListRequest, ListedSkill, Manager, ManagerBuilder, RemoveOutcome, RemoveRequest, Scope,
+    UpdateOutcome, UpdateRequest,
 };
 
 // Link/unlink outcome enum (surfaced by the facade's link result types).

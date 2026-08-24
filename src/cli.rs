@@ -35,6 +35,12 @@ pub enum Command {
     /// Update skills to latest versions (aliases: upgrade, check)
     #[command(alias = "upgrade", alias = "check")]
     Update(UpdateArgs),
+    /// Disable installed skills (alias: d)
+    #[command(alias = "d")]
+    Disable(DisableArgs),
+    /// Enable previously disabled skills (alias: e)
+    #[command(alias = "e")]
+    Enable(EnableArgs),
     /// Link agents' skills dirs to the canonical dir (alias: ln)
     #[command(alias = "ln")]
     Link(LinkArgs),
@@ -109,6 +115,36 @@ pub struct UpdateArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct DisableArgs {
+    /// Skill names to disable
+    pub skills: Vec<String>,
+    /// Disable global skills instead of project skills
+    #[arg(short = 'g', long = "global")]
+    pub global: bool,
+    /// Specify skills to disable (use '*' for all skills)
+    #[arg(short = 's', long = "skill", num_args = 1..)]
+    pub skill: Vec<String>,
+    /// Disable all currently enabled skills
+    #[arg(long = "all")]
+    pub all: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct EnableArgs {
+    /// Skill names to enable
+    pub skills: Vec<String>,
+    /// Enable global skills instead of project skills
+    #[arg(short = 'g', long = "global")]
+    pub global: bool,
+    /// Specify skills to enable (use '*' for all skills)
+    #[arg(short = 's', long = "skill", num_args = 1..)]
+    pub skill: Vec<String>,
+    /// Enable all currently disabled skills
+    #[arg(long = "all")]
+    pub all: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct LinkArgs {
     /// Agents to link (default: auto-detect installed agents; use '*' for all)
     pub agents: Vec<String>,
@@ -167,6 +203,13 @@ pub fn show_banner() {
     );
     println!(
         "  {DIM}${RESET} {TEXT}agents-skills link --unlink{RESET}        {DIM}Unlink agents{RESET}"
+    );
+    println!();
+    println!(
+        "  {DIM}${RESET} {TEXT}agents-skills disable{RESET}            {DIM}Disable installed skills{RESET}"
+    );
+    println!(
+        "  {DIM}${RESET} {TEXT}agents-skills enable{RESET}             {DIM}Re-enable disabled skills{RESET}"
     );
     println!();
     println!("{DIM}try:{RESET} agents-skills add anthropics/skills");

@@ -152,3 +152,20 @@ fn list_invalid_agent_exits_nonzero() {
         .code(1)
         .stdout(predicate::str::contains("Invalid agents"));
 }
+
+#[test]
+fn list_plain_prints_enabled_status() {
+    let p = TestProject::new();
+    let src = p.write_skill_source("my-skill", "pdf");
+
+    p.skills()
+        .args(["add", src.to_str().unwrap()])
+        .assert()
+        .success();
+
+    p.skills()
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("enabled"));
+}

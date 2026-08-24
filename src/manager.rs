@@ -9,14 +9,15 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::core::agents::{
-    AGENTS, Agent, Env, agent_display, config_home, detect_installed_agents,
+    AGENTS, Agent, Env, agent_display, config_home, detect_installed_agents, disabled_skills_dir,
     ensure_universal_agents, get_agent, home, is_installed,
 };
 use crate::core::discover::{Skill, discover_skills, filter_skills};
 use crate::core::fetch::fetch_source;
 use crate::core::github::fetch_skill_via_api;
 use crate::core::install::{
-    get_canonical_path, install_skill, list_installed_skills, sanitize_name, scan_installed,
+    get_canonical_path, install_skill, list_disabled_skills, list_installed_skills, move_skill,
+    sanitize_name, scan_disabled, scan_installed,
 };
 use crate::core::link::{LinkOutcome, is_agent_linked, link_agent, unlink_agent};
 use crate::core::lock::{
@@ -402,8 +403,10 @@ impl Manager {
             return Err(SkillsError::InvalidAgents(invalid.join(", ")));
         }
 
-        let installed = list_installed_skills(&self.env, req.global, &req.agents);
         let lock = read_local_lock(&lock_path(&self.env, req.global));
+        let installed = list_installed_skills(&self.env, req.global, &req.agents);
+        let disabled = list_disabled_skills(&self.env, req.global);
+
         let mut out = Vec::new();
         for s in &installed {
             let entry = find_lock_entry(&lock, &s.name);
@@ -415,9 +418,119 @@ impl Manager {
                 source: entry.map(|e| e.source.clone()),
                 source_url: entry.and_then(|e| e.source_url.clone()),
                 source_type: entry.map(|e| e.source_type.clone()),
+                enabled: true,
             });
         }
+        for s in &disabled {
+            let entry = find_lock_entry(&lock, &s.name);
+            out.push(ListedSkill {
+                name: s.name.clone(),
+                path: s.canonical_path.clone(),
+                scope: s.scope.clone(),
+                agents: Vec::new(),
+                source: entry.map(|e| e.source.clone()),
+                source_url: entry.and_then(|e| e.source_url.clone()),
+                source_type: entry.map(|e| e.source_type.clone()),
+                enabled: false,
+            });
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(out)
+    }
+
+    /// Disable installed skills.
+    ///
+    /// Moves each selected skill's directory from the canonical dir into the sibling
+    /// `disabled-skills` dir, hiding it from every linked or universal agent at once.
+    /// Files are preserved, so [`Manager::enable`] restores them losslessly; the
+    /// lockfile entry is kept, so `list` still shows the skill's source metadata.
+    ///
+    /// # Selection semantics
+    ///
+    /// - `skills` empty and `all` false → nothing is disabled; the outcome reports the
+    ///   currently enabled names (used by the CLI to print a hint).
+    /// - `all` true → every currently enabled skill.
+    ///
+    /// # Errors
+    ///
+    /// [`SkillsError::Io`] if a directory move fails.
+    pub fn disable(&self, req: &DisableRequest) -> Result<DisableOutcome> {
+        let global = req.global;
+        let installed = scan_installed(&self.env, global);
+        let disabled = scan_disabled(&self.env, global);
+
+        if req.skills.is_empty() && !req.all {
+            return Ok(DisableOutcome {
+                installed,
+                requested: Vec::new(),
+                disabled: Vec::new(),
+                already: Vec::new(),
+                missing: Vec::new(),
+            });
+        }
+
+        let requested: Vec<String> = if req.all {
+            installed.clone()
+        } else {
+            req.skills.clone()
+        };
+        let (disabled_out, already, missing) =
+            set_enabled_state(&requested, &installed, &disabled, global, false, &self.env)?;
+
+        Ok(DisableOutcome {
+            installed,
+            requested,
+            disabled: disabled_out,
+            already,
+            missing,
+        })
+    }
+
+    /// Enable previously disabled skills.
+    ///
+    /// Moves each selected skill's directory from the `disabled-skills` dir back into
+    /// the canonical dir, restoring its visibility to every linked or universal agent.
+    /// This is the exact inverse of [`Manager::disable`].
+    ///
+    /// # Selection semantics
+    ///
+    /// - `skills` empty and `all` false → nothing is enabled; the outcome reports the
+    ///   currently disabled names (used by the CLI to print a hint).
+    /// - `all` true → every currently disabled skill.
+    ///
+    /// # Errors
+    ///
+    /// [`SkillsError::Io`] if a directory move fails.
+    pub fn enable(&self, req: &EnableRequest) -> Result<EnableOutcome> {
+        let global = req.global;
+        let disabled = scan_disabled(&self.env, global);
+        let installed = scan_installed(&self.env, global);
+
+        if req.skills.is_empty() && !req.all {
+            return Ok(EnableOutcome {
+                disabled,
+                requested: Vec::new(),
+                enabled: Vec::new(),
+                already: Vec::new(),
+                missing: Vec::new(),
+            });
+        }
+
+        let requested: Vec<String> = if req.all {
+            disabled.clone()
+        } else {
+            req.skills.clone()
+        };
+        let (enabled_out, already, missing) =
+            set_enabled_state(&requested, &disabled, &installed, global, true, &self.env)?;
+
+        Ok(EnableOutcome {
+            disabled,
+            requested,
+            enabled: enabled_out,
+            already,
+            missing,
+        })
     }
 
     /// Remove installed skills.
@@ -498,6 +611,9 @@ impl Manager {
             let canonical = get_canonical_path(name, global, &self.env);
             let sanitized = sanitize_name(name);
             let _ = std::fs::remove_dir_all(&canonical);
+            // Also remove any parked copy in the disabled dir.
+            let disabled = disabled_skills_dir(global, &self.env).join(&sanitized);
+            let _ = std::fs::remove_dir_all(&disabled);
 
             // Clean the lock.
             let mut lock = read_local_lock(&lock_path(&self.env, global));
@@ -557,11 +673,18 @@ impl Manager {
         let global = resolve_scope(req, &self.env);
         let lock_path = lock_path(&self.env, global);
         let lock = read_local_lock(&lock_path);
+        // Disabled skills are parked outside the canonical dir; skip them so they stay disabled.
+        let disabled_names: HashSet<String> = scan_disabled(&self.env, global)
+            .into_iter()
+            .map(|n| sanitize_name(&n))
+            .collect();
         let skills: Vec<(String, LockEntry)> = lock
             .skills
             .iter()
             .filter(|(name, entry)| {
-                matches_skill(name, &req.skills) && entry.source_type != "local"
+                matches_skill(name, &req.skills)
+                    && entry.source_type != "local"
+                    && !disabled_names.contains(&sanitize_name(name))
             })
             .map(|(n, e)| (n.clone(), e.clone()))
             .collect();
@@ -808,6 +931,34 @@ pub struct UpdateRequest {
     pub scope: Scope,
 }
 
+/// Request for [`Manager::disable`].
+///
+/// `Default` is a no-op that only reports enabled names — set `skills` or `all` to
+/// actually disable anything.
+#[derive(Debug, Clone, Default)]
+pub struct DisableRequest {
+    /// Skill names to disable (the CLI merges positional args and `--skill` here).
+    pub skills: Vec<String>,
+    /// Disable global skills instead of project skills.
+    pub global: bool,
+    /// Disable all currently enabled skills.
+    pub all: bool,
+}
+
+/// Request for [`Manager::enable`].
+///
+/// `Default` is a no-op that only reports disabled names — set `skills` or `all` to
+/// actually enable anything.
+#[derive(Debug, Clone, Default)]
+pub struct EnableRequest {
+    /// Skill names to enable (the CLI merges positional args and `--skill` here).
+    pub skills: Vec<String>,
+    /// Enable global skills instead of project skills.
+    pub global: bool,
+    /// Enable all currently disabled skills.
+    pub all: bool,
+}
+
 // ============================ Outcome types ============================
 
 /// Result of [`Manager::add`].
@@ -903,6 +1054,8 @@ pub struct ListedSkill {
     pub source_url: Option<String>,
     /// Source type (e.g. `"github"`, `"local"`).
     pub source_type: Option<String>,
+    /// Whether the skill is enabled (`true`) or parked in `disabled-skills` (`false`).
+    pub enabled: bool,
 }
 
 /// Result of [`Manager::remove`].
@@ -931,6 +1084,36 @@ pub struct UpdateOutcome {
     pub failures: Vec<String>,
 }
 
+/// Result of [`Manager::disable`].
+#[derive(Debug)]
+pub struct DisableOutcome {
+    /// Currently enabled names (used by the no-args hint).
+    pub installed: Vec<String>,
+    /// Requested names (used by the no-match hint).
+    pub requested: Vec<String>,
+    /// Names actually disabled.
+    pub disabled: Vec<String>,
+    /// Names that were already disabled (idempotent no-op).
+    pub already: Vec<String>,
+    /// Requested names that matched neither enabled nor disabled skills.
+    pub missing: Vec<String>,
+}
+
+/// Result of [`Manager::enable`].
+#[derive(Debug)]
+pub struct EnableOutcome {
+    /// Currently disabled names (used by the no-args hint).
+    pub disabled: Vec<String>,
+    /// Requested names (used by the no-match hint).
+    pub requested: Vec<String>,
+    /// Names actually enabled.
+    pub enabled: Vec<String>,
+    /// Names that were already enabled (idempotent no-op).
+    pub already: Vec<String>,
+    /// Requested names that matched neither enabled nor disabled skills.
+    pub missing: Vec<String>,
+}
+
 // ============================ Private helpers ============================
 
 /// Resolve agent selection: `"*"` → all; names → validated; empty → auto-detect + universal.
@@ -954,6 +1137,71 @@ fn resolve_target_agents(names: &[String], env: &Env) -> Result<Vec<&'static Age
     }
     let installed = detect_installed_agents(env);
     Ok(ensure_universal_agents(installed))
+}
+
+/// Resolve requested names against an available set, matching case-insensitively on
+/// sanitized names (the available dir name is returned).
+fn resolve_names(requested: &[String], available: &[String]) -> Vec<String> {
+    let mut identity: HashMap<String, String> = HashMap::new();
+    for folder in available {
+        identity
+            .entry(sanitize_name(folder))
+            .or_insert_with(|| folder.clone());
+    }
+    let mut matched = HashSet::new();
+    for name in requested {
+        if let Some(hit) = identity.get(&sanitize_name(name)) {
+            matched.insert(hit.clone());
+        }
+    }
+    let mut v: Vec<String> = matched.into_iter().collect();
+    v.sort();
+    v
+}
+
+/// Core enable/disable: resolve requested names, classify idempotent/missing, and move
+/// dirs. Returns `(selected, already, missing)` where `selected` were actually moved.
+///
+/// `from_set` holds names in the current state (source of the move); `target_set` holds
+/// names in the target state (to detect idempotent no-ops).
+fn set_enabled_state(
+    requested: &[String],
+    from_set: &[String],
+    target_set: &[String],
+    global: bool,
+    to_enabled: bool,
+    env: &Env,
+) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
+    let selected = resolve_names(requested, from_set);
+
+    let mut already: Vec<String> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
+    for name in requested {
+        if selected
+            .iter()
+            .any(|s| sanitize_name(s) == sanitize_name(name))
+        {
+            continue;
+        }
+        if target_set
+            .iter()
+            .any(|d| sanitize_name(d) == sanitize_name(name))
+        {
+            already.push(name.clone());
+        } else {
+            missing.push(name.clone());
+        }
+    }
+    already.sort();
+    already.dedup();
+    missing.sort();
+    missing.dedup();
+
+    for name in &selected {
+        move_skill(name, global, to_enabled, env)?;
+    }
+
+    Ok((selected, already, missing))
 }
 
 /// Combine `--skill` args with the source's `@skill` filter into one selection list.

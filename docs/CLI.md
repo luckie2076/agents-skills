@@ -21,8 +21,10 @@ cargo install agents-skills
 | `add`    | `a`, `i`, `install`   | 从来源安装技能包                  |
 | `remove` | `rm`, `r`             | 移除已安装技能                    |
 | `list`   | `ls`                  | 列出已安装技能                    |
-| `update` | `upgrade`, `check`    | 将技能更新到最新版本              |
-| `link`   | `ln`                  | 链接/解除链接/查看 agent 链接状态 |
+| `update`  | `upgrade`, `check`    | 将技能更新到最新版本              |
+| `disable` | `d`                   | 禁用已安装技能                    |
+| `enable`  | `e`                   | 重新启用已禁用的技能              |
+| `link`    | `ln`                  | 链接/解除链接/查看 agent 链接状态 |
 
 ## add
 
@@ -86,8 +88,9 @@ agents-skills remove --all
 
 ## list
 
-列出已安装技能（技能名、规范目录路径、来源）。各 agent 的链接状态由
-`link --status` 查询。
+列出已安装技能（技能名、规范目录路径、来源、启用状态）。`list` 始终展示
+全部技能（启用 + 禁用），并附带 `enabled`/`disabled` 状态；`--json` 输出中
+增加 `enabled` 布尔字段。各 agent 的链接状态由 `link --status` 查询。
 
 ```
 agents-skills list [options]
@@ -132,6 +135,57 @@ agents-skills update --global
 
 # 仅更新指定技能
 agents-skills update pdf
+```
+
+## disable
+
+临时禁用已安装技能：把技能目录从规范目录移到平级的 `disabled-skills/`，
+使其对所有 agent 立即不可见；文件完整保留，`enable` 可无损恢复。已禁用的
+技能 `update` 会跳过（保持禁用状态）。
+
+```
+agents-skills disable [skills...] [options]
+```
+
+| 选项                 | 说明                                       |
+| -------------------- | ------------------------------------------ |
+| `-g, --global`       | 禁用全局技能（默认：项目）                 |
+| `-s, --skill <s>...` | 要禁用的技能（`'*'` 表示全部）             |
+| `--all`              | 禁用所有已启用的技能                       |
+
+示例：
+
+```bash
+# 禁用指定技能
+agents-skills disable pdf
+
+# 禁用全部已启用技能
+agents-skills disable --all
+```
+
+## enable
+
+重新启用已禁用的技能：把技能目录从 `disabled-skills/` 移回规范目录，恢复对
+所有 agent 的可见性。是 `disable` 的逆操作。
+
+```
+agents-skills enable [skills...] [options]
+```
+
+| 选项                 | 说明                                       |
+| -------------------- | ------------------------------------------ |
+| `-g, --global`       | 启用全局技能（默认：项目）                 |
+| `-s, --skill <s>...` | 要启用的技能（`'*'` 表示全部）             |
+| `--all`              | 启用所有已禁用的技能                       |
+
+示例：
+
+```bash
+# 启用指定技能
+agents-skills enable pdf
+
+# 启用全部已禁用技能
+agents-skills enable --all
 ```
 
 ## link
