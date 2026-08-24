@@ -1,7 +1,7 @@
-//! link: manage agents' skills dirs and their link state relative to the canonical dir.
+//! agent: manage agents' skills dirs and their link state relative to the canonical dir.
 //!
-//! Three modes, selected by flag — mirroring [`LinkRequest`] on the library side:
-//! - default: connect agents' skills dirs via directory-level symlinks
+//! Three modes, selected by a required flag — mirroring [`LinkRequest`] on the library side:
+//! - `--link`: connect agents' skills dirs via directory-level symlinks
 //! - `--status`: show which agents are linked ([`Manager::link_status`])
 //! - `--unlink`: disconnect agents' skills dirs
 //!
@@ -12,8 +12,8 @@ use crate::commands::{fail_agents, render_link_result};
 use agents_skills::error::Result;
 use agents_skills::{LinkManagerOutcome, LinkOutcome, LinkRequest, Manager};
 
-/// Run the `link` command; `--status` and `--unlink` switch the mode.
-pub fn run(manager: &Manager, args: crate::cli::LinkArgs) -> Result<()> {
+/// Run the `agent` command; `--status` reads only, `--unlink` disconnects, otherwise link.
+pub fn run(manager: &Manager, args: crate::cli::AgentArgs) -> Result<()> {
     if args.status {
         render_status(manager, args.global);
         return Ok(());
@@ -44,9 +44,9 @@ fn render_status(manager: &Manager, global: bool) {
             println!("  {GREEN}✓{RESET} {} {DIM}(linked){RESET}", s.display);
         } else {
             let hint = if global {
-                format!("run `agents-skills link {} -g`", s.name)
+                format!("run `agents-skills agent --link {} -g`", s.name)
             } else {
-                format!("run `agents-skills link {}`", s.name)
+                format!("run `agents-skills agent --link {}`", s.name)
             };
             println!(
                 "  {YELLOW}!{RESET} {} {DIM}(not linked) — {hint}{RESET}",

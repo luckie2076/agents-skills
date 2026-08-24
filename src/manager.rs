@@ -349,7 +349,7 @@ impl Manager {
     ///
     /// Ordering: agents that natively use the canonical dir (`canonical: true`)
     /// come first, then the remaining agents — both groups keep the static agent
-    /// table order. This is the exact order `link --status` renders; callers do
+    /// table order. This is the exact order `agent --status` renders; callers do
     /// not need to sort again.
     pub fn link_status(&self, global: bool) -> Vec<LinkStatus> {
         let mut statuses: Vec<LinkStatus> = AGENTS
@@ -1011,7 +1011,7 @@ pub struct AgentLinkResult {
     pub outcome: LinkOutcome,
 }
 
-/// Link status of one agent (used by `link --status`).
+/// Link status of one agent (used by `agent --status`).
 #[derive(Debug)]
 pub struct LinkStatus {
     /// Agent identifier (as used on the CLI).

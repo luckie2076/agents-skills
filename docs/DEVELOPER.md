@@ -39,12 +39,12 @@ fn main() -> agents_skills::Result<()> {
 
 ## 库接口使用说明
 
-核心是 `link`：技能只在规范目录保存一份，`link` 为每个已安装的 agent 在其技能
-目录创建指向规范目录的符号链接。以下按功能给出库用法，与 CLI 命令一一对应。
+核心是链接：技能只在规范目录保存一份，`agent --link` 为每个已安装的 agent 在其
+技能目录创建指向规范目录的符号链接。以下按功能给出库用法，与 CLI 命令一一对应。
 
-### 让 Agent 可见（link）
+### 让 Agent 可见（agent --link）
 
-对应 CLI：`agents-skills link [agents...] [--status] [--unlink] [--migrate] [-g]`
+对应 CLI：`agents-skills agent [agents...] (--link|--unlink|--status) [--migrate] [-g]`
 
 ```rust
 // 链接所有已安装 agent（项目级）
@@ -83,18 +83,18 @@ for s in manager.link_status(false) {
 ```
 
 `link_status` 返回 [`LinkStatus`]（`name` / `display` / `linked` / `canonical`），
-CLI 的 `link --status` 即其渲染。两种"可见"状态含义不同：
+CLI 的 `agent --status` 即其渲染。两种"可见"状态含义不同：
 
 - **`canonical: true`** —— 该 agent（universal agent）**原生**就读取规范目录，
   `link` 对其是无操作（`AlreadyLinked`）；CLI 显示为 `(canonical dir)`。
   判断优先于 `linked`（universal agent 的 `linked` 恒为 true）。
 - **`canonical: false` + `linked: true`** —— 该 agent 的技能目录是指向规范目录的
-  **符号链接**（通过 `link` 建立）；CLI 显示为 `(linked)`。
+  **符号链接**（通过 `agent --link` 建立）；CLI 显示为 `(linked)`。
 
 只报告"已安装或已链接"的 agent：未安装且未链接的非 universal agent、以及未安装的
 universal agent 都不会出现在结果里。
 
-顺序保证：`link_status` 返回的顺序与 CLI 的 `link --status` 渲染顺序完全一致——
+顺序保证：`link_status` 返回的顺序与 CLI 的 `agent --status` 渲染顺序完全一致——
 `canonical: true`（universal）的 agent 恒在前，其余 agent 在后；两段各自保持静态
 agent 表顺序。CLI 不做二次排序，库调用方也无需自行排序。
 
@@ -134,7 +134,7 @@ let outcome = manager.add(&AddRequest {
 // outcome.skills 为发现到的全部技能
 ```
 
-`add` 不做任何 agent 链接——让 agent 可见是 `link` 的职责。
+`add` 不做任何 agent 链接——让 agent 可见是 `agent --link` 的职责。
 
 ### 列出技能（list）
 
@@ -162,7 +162,7 @@ universal agent 恒在；非 universal agent 仅当其技能目录中存在该�
 `agents` 可能为空数组，与 CLI 的 `-a` 行为一致。
 
 CLI 的 `list` 默认输出（技能名 / 路径 / `Source:`）**不显示** `agents` 列——
-agent 链接状态是 `link --status` 的职责，避免重复噪音；`--json` 保留完整字段
+agent 链接状态是 `agent --status` 的职责，避免重复噪音；`--json` 保留完整字段
 供机器读取。
 
 ### 移除技能（remove）
@@ -283,7 +283,7 @@ let manager = Manager::builder()
 ```
 src/
 ├── lib.rs              库根：Manager 门面 + 请求/结果类型 + core 模块
-├── manager.rs          高层 Manager 门面（add/list/remove/update/link/unlink）
+├── manager.rs          高层 Manager 门面（add/list/remove/update/disable/enable/link）
 ├── error.rs            统一错误类型与 Result 别名
 ├── core/               领域逻辑（纯函数、依赖可注入）
 │   ├── source.rs       来源字符串解析
@@ -302,7 +302,7 @@ src/
     ├── update.rs
     ├── disable.rs
     ├── enable.rs
-    └── link.rs
+    └── agent.rs
 
 examples/
 ├── add_skill.rs        通过 Manager 门面安装技能（真实用法）
@@ -314,7 +314,7 @@ tests/
 ├── cli_add.rs
 ├── cli_remove.rs
 ├── cli_list.rs
-├── cli_link.rs
+├── cli_agent.rs
 ├── cli_enable_disable.rs
 └── cli_version.rs
 ```

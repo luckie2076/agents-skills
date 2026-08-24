@@ -1,4 +1,4 @@
-//! End-to-end tests for the `link` command (link / --status / --unlink) and the directory-link model.
+//! End-to-end tests for the `agent` command (--link / --status / --unlink) and the directory-link model.
 
 mod common;
 
@@ -8,11 +8,22 @@ use std::path::Path;
 use common::TestProject;
 
 #[test]
-fn link_creates_relative_dir_symlink() {
+fn agent_requires_mode_flag() {
+    let p = TestProject::new();
+    p.skills()
+        .args(["agent", "claude-code"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("error"));
+}
+
+#[test]
+fn agent_link_creates_relative_dir_symlink() {
     let p = TestProject::new();
     // claude-code links even without .claude/ (historical exception).
     p.skills()
-        .args(["link", "claude-code"])
+        .args(["agent", "--link", "claude-code"])
         .assert()
         .success()
         .stdout(predicate::str::contains("linked"));
@@ -26,21 +37,21 @@ fn link_creates_relative_dir_symlink() {
 }
 
 #[test]
-fn link_refuses_content_and_migrate_adopts_it() {
+fn agent_link_refuses_content_and_migrate_adopts_it() {
     let p = TestProject::new();
     let existing = p.path().join(".claude/skills/my-skill");
     std::fs::create_dir_all(&existing).unwrap();
     std::fs::write(existing.join("SKILL.md"), "x").unwrap();
 
     p.skills()
-        .args(["link", "claude-code"])
+        .args(["agent", "--link", "claude-code"])
         .assert()
         .success()
         .stdout(predicate::str::contains("migrate"));
 
     // --migrate moves the skill into the canonical dir and links.
     p.skills()
-        .args(["link", "claude-code", "--migrate"])
+        .args(["agent", "--link", "claude-code", "--migrate"])
         .assert()
         .success()
         .stdout(predicate::str::contains("migrated"));
@@ -50,7 +61,7 @@ fn link_refuses_content_and_migrate_adopts_it() {
 }
 
 #[test]
-fn link_refuses_dir_with_only_stray_files() {
+fn agent_link_refuses_dir_with_only_stray_files() {
     let p = TestProject::new();
     // A real file is not a skill: linking is refused, nothing is touched, and the
     // hint does not (wrongly) point at --migrate.
@@ -58,7 +69,7 @@ fn link_refuses_dir_with_only_stray_files() {
     std::fs::write(p.path().join(".claude/skills/README.txt"), "x").unwrap();
 
     p.skills()
-        .args(["link", "claude-code"])
+        .args(["agent", "--link", "claude-code"])
         .assert()
         .success()
         .stdout(predicate::str::contains("non-skill files"))
@@ -69,12 +80,15 @@ fn link_refuses_dir_with_only_stray_files() {
 }
 
 #[test]
-fn unlink_restores_real_dir() {
+fn agent_unlink_restores_real_dir() {
     let p = TestProject::new();
-    p.skills().args(["link", "claude-code"]).assert().success();
+    p.skills()
+        .args(["agent", "--link", "claude-code"])
+        .assert()
+        .success();
 
     p.skills()
-        .args(["link", "--unlink", "claude-code"])
+        .args(["agent", "--unlink", "claude-code"])
         .assert()
         .success()
         .stdout(predicate::str::contains("unlinked"));
@@ -85,15 +99,18 @@ fn unlink_restores_real_dir() {
 }
 
 #[test]
-fn link_status_prints_installed_agents_and_link_state() {
+fn agent_status_prints_installed_agents_and_link_state() {
     let p = TestProject::new();
-    p.skills().args(["link", "claude-code"]).assert().success();
+    p.skills()
+        .args(["agent", "--link", "claude-code"])
+        .assert()
+        .success();
 
     // CodeBuddy is detected via `.codebuddy` in the cwd: installed but not linked.
     std::fs::create_dir_all(p.path().join(".codebuddy")).unwrap();
 
     p.skills()
-        .args(["link", "--status"])
+        .args(["agent", "--status"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Agent link status"))
@@ -101,22 +118,25 @@ fn link_status_prints_installed_agents_and_link_state() {
         .stdout(predicate::str::contains("(linked)"))
         .stdout(predicate::str::contains("CodeBuddy"))
         .stdout(predicate::str::contains(
-            "not linked) — run `agents-skills link codebuddy`",
+            "not linked) — run `agents-skills agent --link codebuddy`",
         ));
 }
 
 #[test]
-fn link_status_orders_canonical_agents_first() {
+fn agent_status_orders_canonical_agents_first() {
     let p = TestProject::new();
     // codex is canonical (universal); claude-code is non-canonical but linked.
     std::fs::create_dir_all(p.path().join(".codex")).unwrap();
     std::fs::create_dir_all(p.path().join(".claude")).unwrap();
-    p.skills().args(["link", "claude-code"]).assert().success();
+    p.skills()
+        .args(["agent", "--link", "claude-code"])
+        .assert()
+        .success();
 
     let out = p
         .skills()
         .env("HOME", p.path())
-        .args(["link", "--status"])
+        .args(["agent", "--status"])
         .output()
         .unwrap();
     let stdout = String::from_utf8(out.stdout).unwrap();
@@ -127,14 +147,14 @@ fn link_status_orders_canonical_agents_first() {
 }
 
 #[test]
-fn link_status_marks_universal_agents_as_canonical() {
+fn agent_status_marks_universal_agents_as_canonical() {
     let p = TestProject::new();
     // Warp is a universal agent (reads `.agents/skills` natively); pretend it's installed.
     std::fs::create_dir_all(p.path().join(".warp")).unwrap();
 
     p.skills()
         .env("HOME", p.path())
-        .args(["link", "--status"])
+        .args(["agent", "--status"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Warp"))
@@ -142,33 +162,33 @@ fn link_status_marks_universal_agents_as_canonical() {
 }
 
 #[test]
-fn link_status_conflicts_with_unlink_and_migrate() {
+fn agent_status_conflicts_with_unlink_and_migrate() {
     let p = TestProject::new();
 
     p.skills()
-        .args(["link", "--status", "--unlink"])
+        .args(["agent", "--status", "--unlink"])
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("cannot be used with"));
+        .stderr(predicate::str::contains("error"));
 
     p.skills()
-        .args(["link", "--status", "--migrate"])
+        .args(["agent", "--status", "--migrate"])
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("cannot be used with"));
+        .stderr(predicate::str::contains("error"));
 
     p.skills()
-        .args(["link", "--unlink", "--migrate"])
+        .args(["agent", "--unlink", "--migrate"])
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("cannot be used with"));
+        .stderr(predicate::str::contains("error"));
 }
 
 #[test]
-fn add_then_link_ensures_agent_links() {
+fn add_then_agent_link_ensures_agent_links() {
     let p = TestProject::new();
     let src = p.write_skill_source("my-skill", "pdf");
 
@@ -182,8 +202,11 @@ fn add_then_link_ensures_agent_links() {
     // `add` only installs into the canonical dir — no agent link yet.
     assert!(!p.path().join(".claude/skills").is_symlink());
 
-    // `link` exposes the canonical dir to the agent.
-    p.skills().args(["link", "claude-code"]).assert().success();
+    // `agent --link` exposes the canonical dir to the agent.
+    p.skills()
+        .args(["agent", "--link", "claude-code"])
+        .assert()
+        .success();
     let link = p.path().join(".claude/skills");
     assert!(link.is_symlink());
     // The skill is visible through the agent link.
@@ -198,7 +221,10 @@ fn remove_skill_disappears_from_linked_agents() {
         .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
-    p.skills().args(["link", "claude-code"]).assert().success();
+    p.skills()
+        .args(["agent", "--link", "claude-code"])
+        .assert()
+        .success();
 
     p.skills().args(["remove", "pdf", "-y"]).assert().success();
 
@@ -206,11 +232,4 @@ fn remove_skill_disappears_from_linked_agents() {
     // The dir link remains, but the skill is gone (no dead per-skill links).
     assert!(p.path().join(".claude/skills").is_symlink());
     assert!(!p.path().join(".claude/skills/pdf").exists());
-}
-
-#[test]
-fn link_alias_ln_works() {
-    let p = TestProject::new();
-    p.skills().args(["ln", "claude-code"]).assert().success();
-    assert!(p.path().join(".claude/skills").is_symlink());
 }

@@ -49,7 +49,7 @@ fn main() {
         Some(Command::Update(u)) => commands::update::run(&manager, u),
         Some(Command::Disable(d)) => commands::disable::run(&manager, d),
         Some(Command::Enable(e)) => commands::enable::run(&manager, e),
-        Some(Command::Link(l)) => commands::link::run(&manager, l),
+        Some(Command::Agent(a)) => commands::agent::run(&manager, a),
         None => Ok(()),
     };
 

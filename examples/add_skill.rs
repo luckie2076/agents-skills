@@ -5,7 +5,7 @@
 //!   cargo run --example add_skill -- ./path/to/skill
 //!
 //! Note: this installs into your real environment (project or global scope).
-//! Run `agents-skills link` afterwards to expose the skill to your agents.
+//! Run `agents-skills agent --link` afterwards to expose the skill to your agents.
 
 use agents_skills::{AddRequest, Manager};
 

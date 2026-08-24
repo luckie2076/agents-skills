@@ -24,12 +24,12 @@ cargo install agents-skills
 | `update`  | `upgrade`, `check`    | 将技能更新到最新版本              |
 | `disable` | `d`                   | 禁用已安装技能                    |
 | `enable`  | `e`                   | 重新启用已禁用的技能              |
-| `link`    | `ln`                  | 链接/解除链接/查看 agent 链接状态 |
+| `agent`   |                       | 链接/解除链接/查看 agent 链接状态 |
 
 ## add
 
 从本地路径、Git 仓库或 HTTPS 端点安装技能包到规范目录（项目 `.agents/skills`
-或全局 `~/.agents/skills`）。`add` 不做任何 agent 链接——安装后运行 `link`
+或全局 `~/.agents/skills`）。`add` 不做任何 agent 链接——安装后运行 `agent --link`
 即可让 agent 可见。
 
 ```
@@ -56,9 +56,9 @@ agents-skills add anthropics/skills@pdf
 # 只列出仓库中的可用技能，不安装
 agents-skills add anthropics/skills -l
 
-# 安装后运行 link，让 agent 可见
+# 安装后运行 agent --link，让 agent 可见
 agents-skills add anthropics/skills
-agents-skills link
+agents-skills agent --link
 ```
 
 ## remove
@@ -90,7 +90,7 @@ agents-skills remove --all
 
 列出已安装技能（技能名、规范目录路径、来源、启用状态）。`list` 始终展示
 全部技能（启用 + 禁用），并附带 `enabled`/`disabled` 状态；`--json` 输出中
-增加 `enabled` 布尔字段。各 agent 的链接状态由 `link --status` 查询。
+增加 `enabled` 布尔字段。各 agent 的链接状态由 `agent --status` 查询。
 
 ```
 agents-skills list [options]
@@ -188,41 +188,43 @@ agents-skills enable pdf
 agents-skills enable --all
 ```
 
-## link
+## agent
 
-管理 agent 技能目录与规范目录的链接关系：默认链接，`--status` 查看链接状态，
-`--unlink` 解除链接。
+管理 agent 技能目录与规范目录的链接关系。必须通过 `--link` / `--unlink` /
+`--status` 之一选择操作：`--link` 建立链接，`--unlink` 解除链接，`--status`
+查看链接状态（只读）。
 
 ```
-agents-skills link [agents...] [options]
+agents-skills agent [agents...] (--link | --unlink | --status) [options]
 ```
 
 | 选项             | 说明                                             |
 | ---------------- | ------------------------------------------------ |
-| `-g, --global`   | 链接全局技能目录而非项目目录                     |
-| `--status`       | 显示已安装 agent 的链接状态（不修改任何内容）    |
+| `-g, --global`   | 操作全局技能目录而非项目目录                     |
+| `--link`         | 把 agent 技能目录链接到规范目录                  |
 | `--unlink`       | 解除 agent 与规范目录的链接                      |
-| `--migrate`      | 把 Agent 目录中的存量技能移入规范目录            |
+| `--status`       | 显示已安装 agent 的链接状态（不修改任何内容）    |
+| `--migrate`      | 把 Agent 目录中的存量技能移入规范目录（仅 `--link`） |
 
-`--status` 区分两种"可见"状态：原生读取规范目录的 agent（如 Codex、Cursor、
-Warp）标记为 `(canonical dir)`；通过符号链接接入的 agent 标记为 `(linked)`。
-`--status` 与 `--unlink` 互斥；`--migrate` 仅对默认链接行为有效。
-Agent 默认为自动探测的已安装 agent；`'*'` 表示全部。
+`--link` / `--unlink` / `--status` 互斥，必须且只能指定其一。`--status` 区分
+两种"可见"状态：原生读取规范目录的 agent（如 Codex、Cursor、Warp）标记为
+`(canonical dir)`；通过符号链接接入的 agent 标记为 `(linked)`。`--migrate`
+仅与 `--link` 配合。Agent 默认为自动探测的已安装 agent；`'*'` 表示全部。
 
 示例：
 
 ```bash
 # 链接全部已安装 agent
-agents-skills link
+agents-skills agent --link
 
 # 链接指定 agent，并迁移其存量技能
-agents-skills link claude-code --migrate
+agents-skills agent --link claude-code --migrate
 
 # 查看各 agent 的链接状态
-agents-skills link --status
+agents-skills agent --status
 
 # 解除指定 agent 的链接
-agents-skills link --unlink claude-code
+agents-skills agent --unlink claude-code
 ```
 
 ## 相关概念

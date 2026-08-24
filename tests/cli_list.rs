@@ -107,7 +107,7 @@ fn list_plain_hides_agents() {
         .success();
 
     // Plain output shows name/path/Source but no per-skill agent column;
-    // agent link status is `link --status`'s job.
+    // agent link status is `agent --status`'s job.
     p.skills()
         .arg("list")
         .assert()

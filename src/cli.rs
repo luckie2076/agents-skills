@@ -3,7 +3,7 @@
 //! This is the externally exposed interface contract: 4 primary commands + aliases +
 //! all flags, centralized in this file for readability.
 
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -41,9 +41,8 @@ pub enum Command {
     /// Enable previously disabled skills (alias: e)
     #[command(alias = "e")]
     Enable(EnableArgs),
-    /// Link agents' skills dirs to the canonical dir (alias: ln)
-    #[command(alias = "ln")]
-    Link(LinkArgs),
+    /// Manage agents' skills dirs link state (--link / --unlink / --status)
+    Agent(AgentArgs),
 }
 
 #[derive(Debug, Args)]
@@ -145,19 +144,27 @@ pub struct EnableArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct LinkArgs {
-    /// Agents to link (default: auto-detect installed agents; use '*' for all)
+#[command(group(
+    ArgGroup::new("mode")
+        .required(true)
+        .args(["link", "unlink", "status"])
+))]
+pub struct AgentArgs {
+    /// Agents to link/unlink (default: auto-detect installed agents; use '*' for all)
     pub agents: Vec<String>,
     /// Link global skills dirs instead of project ones
     #[arg(short = 'g', long = "global")]
     pub global: bool,
-    /// Show link status of installed agents (does not modify anything)
-    #[arg(long = "status", conflicts_with = "unlink")]
-    pub status: bool,
+    /// Link agents' skills dirs to the canonical dir
+    #[arg(long = "link")]
+    pub link: bool,
     /// Unlink agents' skills dirs from the canonical dir
-    #[arg(long = "unlink", conflicts_with = "status")]
+    #[arg(long = "unlink")]
     pub unlink: bool,
-    /// Migrate existing agent skills dirs into the canonical dir
+    /// Show link status of installed agents (does not modify anything)
+    #[arg(long = "status")]
+    pub status: bool,
+    /// Migrate existing agent skills dirs into the canonical dir (only with --link)
     #[arg(long = "migrate", conflicts_with_all = ["status", "unlink"])]
     pub migrate: bool,
 }
@@ -196,13 +203,13 @@ pub fn show_banner() {
     );
     println!();
     println!(
-        "  {DIM}${RESET} {TEXT}agents-skills link{RESET}                 {DIM}Link agents to the skills dir{RESET}"
+        "  {DIM}${RESET} {TEXT}agents-skills agent --link{RESET}          {DIM}Link agents to the skills dir{RESET}"
     );
     println!(
-        "  {DIM}${RESET} {TEXT}agents-skills link --status{RESET}        {DIM}Show agent link status{RESET}"
+        "  {DIM}${RESET} {TEXT}agents-skills agent --status{RESET}        {DIM}Show agent link status{RESET}"
     );
     println!(
-        "  {DIM}${RESET} {TEXT}agents-skills link --unlink{RESET}        {DIM}Unlink agents{RESET}"
+        "  {DIM}${RESET} {TEXT}agents-skills agent --unlink{RESET}        {DIM}Unlink agents{RESET}"
     );
     println!();
     println!(

@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 一个极简的 AI Agent 技能安装与管理工具：所有技能集中存放在一个**规范目录**，
-通过一次 `link` 即可让 [Claude Code](https://claude.com/code)、Codex、Cursor 等
+通过一次 `agent --link` 即可让 [Claude Code](https://claude.com/code)、Codex、Cursor 等
 70+ 编程 Agent 全部可见可用——安装一次，处处生效。
 
 ```bash
@@ -20,7 +20,7 @@ cargo install agents-skills
 
 ```bash
 # 1. 核心一步：link 为所有已安装的 agent 创建指向规范目录的符号链接
-agents-skills link
+agents-skills agent --link
 
 # 2. 安装技能包（装进规范目录后，所有 agent 立即可见）
 agents-skills add anthropics/skills
@@ -29,37 +29,38 @@ agents-skills add anthropics/skills
 agents-skills list
 
 # 查看各 agent 的链接状态
-agents-skills link --status
+agents-skills agent --status
 ```
 
-核心是 `link`：技能只在规范目录保存一份（项目级 `.agents/skills/` 或全局级
-`~/.agents/skills/`），`link` 为每个已安装的 agent（Claude Code、Codex、Cursor…）
+核心是链接：技能只在规范目录保存一份（项目级 `.agents/skills/` 或全局级
+`~/.agents/skills/`），`agent --link` 为每个已安装的 agent（Claude Code、Codex、Cursor…）
 在其技能目录创建指向规范目录的符号链接；链接建立后，`add` 安装的技能所有
 agent 立即可见，无需任何同步。
 
 ## 功能说明
 
-### 核心：让 Agent 可见（link）
+### 核心：让 Agent 可见（agent --link）
 
-本质：技能只在规范目录保存一份真实副本；`link` 为每个 agent 在其技能目录创建
-指向规范目录的符号链接（如 `.claude/skills` → `../.agents/skills`），使 70+ 编程
-Agent 共享同一份技能，安装一次、处处可见。这是本项目最核心的能力：`add`/`remove`/
-`update` 只操作规范目录，其余 agent 通过链接自动同步。`link` 一个命令负责
-链接、查询状态与解除链接三种操作：
+本质：技能只在规范目录保存一份真实副本；`agent --link` 为每个 agent 在其技能
+目录创建指向规范目录的符号链接（如 `.claude/skills` → `../.agents/skills`），使
+70+ 编程 Agent 共享同一份技能，安装一次、处处可见。这是本项目最核心的能力：
+`add`/`remove`/`update` 只操作规范目录，其余 agent 通过链接自动同步。`agent`
+一个命令负责链接、查询状态与解除链接三种操作（通过 `--link` / `--status` /
+`--unlink` 选择）：
 
 ```bash
-agents-skills link                           # 自动链接本机已安装的所有 agent
-agents-skills link claude-code               # 只链接指定 agent
-agents-skills link claude-code --migrate     # 链接并迁移存量技能
-agents-skills link --status                  # 查看各 agent 的链接状态
-agents-skills link --unlink claude-code      # 解除链接
+agents-skills agent --link                          # 自动链接本机已安装的所有 agent
+agents-skills agent --link claude-code              # 只链接指定 agent
+agents-skills agent --link claude-code --migrate    # 链接并迁移存量技能
+agents-skills agent --status                        # 查看各 agent 的链接状态
+agents-skills agent --unlink claude-code            # 解除链接
 ```
 
 ### 安装技能（add）
 
 本质：从来源拉取技能包，发现其中的 `SKILL.md` 后复制进规范目录（`.agents/skills`
 或 `~/.agents/skills`），并把来源与内容哈希写入 `skills-lock.json`。`add` 不做任何
-agent 链接——让 agent 可见是 `link` 的职责（见上文）。
+agent 链接——让 agent 可见是 `agent --link` 的职责（见上文）。
 
 ```bash
 # 安装全部技能到规范目录
@@ -71,8 +72,8 @@ agents-skills add anthropics/skills@pdf
 
 ### 列出技能（list）
 
-本质：扫描规范目录，列出已安装技能（技能名、路径、来源）。各 agent 的
-链接状态由 `link --status` 查询。
+本质：扫描规范目录，列出已安装技能（技能名、路径、来源、启用状态）。各 agent 的
+链接状态由 `agent --status` 查询。
 
 ```bash
 agents-skills list             # 项目级
@@ -150,7 +151,7 @@ agents-skills enable --all           # 启用全部已禁用技能
 | `update`  | `upgrade`, `check`  | 将技能更新到最新版本                |
 | `disable` | `d`                 | 禁用已安装技能                      |
 | `enable`  | `e`                 | 重新启用已禁用的技能                |
-| `link`    | `ln`                | 链接/解除链接/查看 agent 链接状态   |
+| `agent`   |                     | 链接/解除链接/查看 agent 链接状态   |
 
 > 完整的命令行参数（每个命令的选项与更多示例）见 [docs/CLI.md](docs/CLI.md)。
 > 开发者（库接口使用说明、项目结构、开发流程）见 [docs/DEVELOPER.md](docs/DEVELOPER.md)。
