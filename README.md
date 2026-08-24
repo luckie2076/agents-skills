@@ -14,7 +14,7 @@ cargo install agents-skills
 ```
 
 同时提供可嵌入的 Rust 库，适合把技能管理集成进自有工具的场景，
-见 [docs/DEVELOPER.md](docs/DEVELOPER.md)。
+见 [docs/LIBRARY.md](docs/LIBRARY.md)。
 
 ## 快速开始
 
@@ -154,7 +154,8 @@ agents-skills enable --all           # 启用全部已禁用技能
 | `agent`   |                     | 链接/解除链接/查看 agent 链接状态   |
 
 > 完整的命令行参数（每个命令的选项与更多示例）见 [docs/CLI.md](docs/CLI.md)。
-> 开发者（库接口使用说明、项目结构、开发流程）见 [docs/DEVELOPER.md](docs/DEVELOPER.md)。
+> 库使用者（把技能管理集成进自有 Rust 工具）见 [docs/LIBRARY.md](docs/LIBRARY.md)。
+> 项目开发者（项目结构、开发流程、发布）见 [docs/DEVELOPER.md](docs/DEVELOPER.md)。
 
 ### License
 

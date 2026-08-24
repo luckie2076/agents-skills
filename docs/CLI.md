@@ -1,6 +1,7 @@
 # agents-skills 命令行参考
 
-`agents-skills` CLI 的完整命令参考。功能概览与快速上手见 [README](../README.md)。
+`agents-skills` CLI 的完整命令参考。功能概览与快速上手见 [README](../README.md)，
+库使用者见 [LIBRARY.md](LIBRARY.md)，本项目开发者见 [DEVELOPER.md](DEVELOPER.md)。
 
 ## 安装
 
@@ -230,3 +231,4 @@ agents-skills agent --unlink claude-code
 ## 相关概念
 
 - 来源格式与安装位置见 [README · 功能说明](../README.md#功能说明)。
+- 库接口（每个命令对应的 `Manager` 方法与请求/结果类型）见 [LIBRARY.md](LIBRARY.md)。
