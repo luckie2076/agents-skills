@@ -250,29 +250,6 @@ impl Manager {
         })
     }
 
-    /// Convenience: install every skill from `source` with default options.
-    ///
-    /// Equivalent to [`Manager::add`] with an [`AddRequest`] containing only a `source`
-    /// (and therefore default selection: project scope, all skills).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use agents_skills::Manager;
-    ///
-    /// let manager = Manager::new();
-    /// // `add_source` with a bad source yields a structured error (no panic).
-    /// let result = manager.add_source("./does-not-exist");
-    /// assert!(result.is_err());
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Same as [`Manager::add`]: see its `# Errors` section.
-    pub fn add_source(&self, source: impl Into<String>) -> Result<AddOutcome> {
-        self.add(&AddRequest::new(source))
-    }
-
     /// Link agents' skills dirs to the canonical dir.
     ///
     /// Each target agent's own skills dir becomes a relative symlink pointing at the

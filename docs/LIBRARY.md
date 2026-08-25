@@ -6,24 +6,25 @@
 
 ```toml
 [dependencies]
-agents-skills = "0.5"
+agents-skills = "0.6"
 ```
 
 ## 快速开始
 
 ```rust
-use agents_skills::{AgentRequest, Manager};
+use agents_skills::{AddRequest, AgentRequest, Manager};
 
 fn main() -> agents_skills::Result<()> {
     let manager = Manager::builder().build(); // 等价于 Manager::new()
 
     manager.agent(&AgentRequest::default())?;        // 链接所有已安装 agent
-    let outcome = manager.add_source("anthropics/skills")?; // 安装技能包
+    let outcome = manager.add(&AddRequest::new("anthropics/skills"))?; // 安装技能包
     println!("installed {} skill(s)", outcome.installed.len());
 
+    // agent_status 列出每个 agent 的链接状态；未链接且自带技能的 agent
+    // 会通过 internal_skills 暴露那些技能名（便于随后 --migrate）。
     for s in manager.agent_status(false) {
         println!("{}: linked={}", s.name, s.linked);
-        // 未链接的 agent 若自身目录已含技能，会通过 internal_skills 列出（便于随后 --migrate）。
         if !s.internal_skills.is_empty() {
             println!("  internal: {}", s.internal_skills.join(", "));
         }
@@ -37,16 +38,47 @@ fn main() -> agents_skills::Result<()> {
 每个方法接收一个纯数据请求结构体，返回结构化结果；请求结构体均为
 `Default + Clone`，可用字段覆盖构建。
 
-| 方法                    | 请求                | 返回                                      |
-| ----------------------- | ------------------- | ----------------------------------------- |
-| [`Manager::add`]        | [`AddRequest`]      | [`AddOutcome`]（已安装 + 链接 + 失败）    |
-| [`Manager::add_source`] | `impl Into<String>` | [`AddOutcome`]                            |
-| [`Manager::agent`]      | [`AgentRequest`]    | [`AgentOutcome`]（逐 agent 结果）         |
-| [`Manager::list`]       | [`ListRequest`]     | `Vec<`[`ListedSkill`]`>`（可序列化）      |
-| [`Manager::remove`]     | [`RemoveRequest`]   | [`RemoveOutcome`]（已移除名称）           |
-| [`Manager::update`]     | [`UpdateRequest`]   | [`UpdateOutcome`]（更新/失败计数）        |
-| [`Manager::disable`]    | [`DisableRequest`]  | [`DisableOutcome`]（已禁用名称）          |
-| [`Manager::enable`]     | [`EnableRequest`]   | [`EnableOutcome`]（已启用名称）           |
+| 方法                      | 请求               | 返回                                   |
+| ------------------------- | ------------------ | -------------------------------------- |
+| [`Manager::add`]          | [`AddRequest`]     | [`AddOutcome`]（已安装 + 链接 + 失败） |
+| [`Manager::agent`]        | [`AgentRequest`]   | [`AgentOutcome`]（逐 agent 结果）      |
+| [`Manager::agent_status`] | `bool`（global）   | `Vec<`[`AgentStatus`]`>`               |
+| [`Manager::list`]         | [`ListRequest`]    | `Vec<`[`ListedSkill`]`>`（可序列化）   |
+| [`Manager::remove`]       | [`RemoveRequest`]  | [`RemoveOutcome`]（已移除名称）        |
+| [`Manager::update`]       | [`UpdateRequest`]  | [`UpdateOutcome`]（更新/失败计数）     |
+| [`Manager::disable`]      | [`DisableRequest`] | [`DisableOutcome`]（已禁用名称）       |
+| [`Manager::enable`]       | [`EnableRequest`]  | [`EnableOutcome`]（已启用名称）        |
+
+### 请求结构体字段
+
+| 结构体             | 字段（除 `global: bool` 外）                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| [`AddRequest`]     | `source: String`、`skills: Vec<String>`（`"*"` 或具体名，空 = 全部）、`list_only: bool`、`full_depth: bool` |
+| [`AgentRequest`]   | `agents: Vec<String>`、`unlink: bool`、`migrate: bool`                                                      |
+| [`ListRequest`]    | `agents: Vec<String>`（空 = 全部 agent）                                                                    |
+| [`RemoveRequest`]  | `skills: Vec<String>`、`all: bool`                                                                          |
+| [`UpdateRequest`]  | `skills: Vec<String>`、`scope: Scope`                                                                       |
+| [`DisableRequest`] | `skills: Vec<String>`、`all: bool`                                                                          |
+| [`EnableRequest`]  | `skills: Vec<String>`、`all: bool`                                                                          |
+
+所有请求结构体带 `global: bool` 字段，对应 CLI 的 `-g/--global`：`false` 操作项目级
+`./.agents/skills`，`true` 操作全局 `~/.agents/skills`。`AgentRequest` 与
+`ListRequest` 的 `agents` 字段用于限定 agent（`"*"` 或具体名，空 = 自动探测）。
+
+[`UpdateRequest`] 的 `scope` 用于覆盖自动作用域判定，取值
+[`Scope::Auto`]（默认，项目有技能/锁文件则项目级，否则全局）、[`Scope::Global`]、
+[`Scope::Project`]。
+
+### 与 CLI 的对应约定
+
+- **`add` 单 source**：CLI 的 `add <source...>` 可一次装多个源，库的
+  [`AddRequest`] 只接受单个 `source: String`。要装多个源请多次调用
+  `manager.add(...)`，每次返回独立的 [`AddOutcome`]。
+- **`AgentRequest` 的 link 约定**：CLI 的 `agent` 命令 `--link`/`--unlink`/`--status`
+  三选一互斥；库把 `--status` 拆为独立的 [`Manager::agent_status`]，因此
+  [`AgentRequest`] 只需区分 link 与 unlink：`unlink: false`（默认）即 link，
+  `unlink: true` 即 unlink，`migrate: true` 仅在 link 时生效（对应 CLI
+  `--link --migrate`）。
 
 ### 常见操作
 
@@ -76,10 +108,6 @@ manager.disable(&DisableRequest { skills: vec!["pdf".into()], ..Default::default
 manager.enable(&EnableRequest { skills: vec!["pdf".into()], ..Default::default() })?;
 ```
 
-所有请求结构体带 `global: bool` 字段，对应 CLI 的 `-g/--global`：`false` 操作项目级
-`./.agents/skills`，`true` 操作全局 `~/.agents/skills`。`agent` 与 `list` 的 `agents`
-字段用于限定 agent。
-
 ## 上下文注入：[`ManagerBuilder`]
 
 ```rust
@@ -97,13 +125,12 @@ let manager = Manager::builder()
 
 如需细粒度控制，底层纯函数位于 `agents_skills::core`（未在 crate 根重导出）：
 
-- **来源** —— [`core::source::parse_source`]、[`core::source::owner_repo`]
-- **发现** —— [`core::discover::discover_skills`]、[`core::discover::filter_skills`]、[`core::discover::parse_skill_md`]
-- **安装** —— [`core::install::install_skill`]、[`core::install::list_installed_skills`]、[`core::install::sanitize_name`]
-- **禁用/启用** —— [`core::install::move_skill`]、[`core::install::list_disabled_skills`]、[`core::agents::disabled_skills_dir`]
-- **链接** —— [`core::link::link_agent`]、[`core::link::unlink_agent`]、[`core::link::is_agent_linked`]
-- **锁文件** —— [`core::lock::read_local_lock`]、[`core::lock::write_local_lock`]、[`core::lock::compute_folder_hash`]
-- **Agent** —— [`core::agents::get_agent`]、[`core::agents::detect_installed_agents`]、[`core::agents::Agent`]、[`core::agents::Env`]
+- **来源**：[`parse_source`]、[`owner_repo`]
+- **发现**：[`discover_skills`]、[`filter_skills`]、[`parse_skill_md`]
+- **安装**：[`install_skill`]、[`list_installed_skills`]、[`sanitize_name`]、[`move_skill`]、[`list_disabled_skills`]
+- **Agent**：[`get_agent`]、[`detect_installed_agents`]、[`Agent`]、[`Env`]、[`disabled_skills_dir`]
+- **链接**：[`link_agent`]、[`unlink_agent`]、[`is_agent_linked`]
+- **锁文件**：[`read_local_lock`]、[`write_local_lock`]、[`compute_folder_hash`]
 
 ## 示例
 
@@ -119,8 +146,8 @@ cargo run --example add_skill   # 通过 Manager 安装到真实环境
 
 [`Manager`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html
 [`Manager::add`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add
-[`Manager::add_source`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add_source
 [`Manager::agent`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.agent
+[`Manager::agent_status`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.agent_status
 [`Manager::list`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.list
 [`Manager::remove`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.remove
 [`Manager::update`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.update
@@ -131,6 +158,7 @@ cargo run --example add_skill   # 通过 Manager 安装到真实环境
 [`AddOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AddOutcome.html
 [`AgentRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentRequest.html
 [`AgentOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentOutcome.html
+[`AgentStatus`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentStatus.html
 [`ListRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListRequest.html
 [`ListedSkill`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListedSkill.html
 [`RemoveRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveRequest.html
@@ -141,24 +169,27 @@ cargo run --example add_skill   # 通过 Manager 安装到真实环境
 [`DisableOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.DisableOutcome.html
 [`EnableRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.EnableRequest.html
 [`EnableOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.EnableOutcome.html
-[`core::source::parse_source`]: https://docs.rs/agents-skills/latest/agents_skills/core/source/fn.parse_source.html
-[`core::source::owner_repo`]: https://docs.rs/agents-skills/latest/agents_skills/core/source/fn.owner_repo.html
-[`core::discover::discover_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.discover_skills.html
-[`core::discover::filter_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.filter_skills.html
-[`core::discover::parse_skill_md`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.parse_skill_md.html
-[`core::install::install_skill`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.install_skill.html
-[`core::install::list_installed_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.list_installed_skills.html
-[`core::install::sanitize_name`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.sanitize_name.html
-[`core::install::move_skill`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.move_skill.html
-[`core::install::list_disabled_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.list_disabled_skills.html
-[`core::agents::disabled_skills_dir`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.disabled_skills_dir.html
-[`core::link::link_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.link_agent.html
-[`core::link::unlink_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.unlink_agent.html
-[`core::link::is_agent_linked`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.is_agent_linked.html
-[`core::lock::read_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.read_local_lock.html
-[`core::lock::write_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.write_local_lock.html
-[`core::lock::compute_folder_hash`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.compute_folder_hash.html
-[`core::agents::get_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.get_agent.html
-[`core::agents::detect_installed_agents`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.detect_installed_agents.html
-[`core::agents::Agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/struct.Agent.html
-[`core::agents::Env`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/struct.Env.html
+[`Scope::Auto`]: https://docs.rs/agents-skills/latest/agents_skills/enum.Scope.html
+[`Scope::Global`]: https://docs.rs/agents-skills/latest/agents_skills/enum.Scope.html
+[`Scope::Project`]: https://docs.rs/agents-skills/latest/agents_skills/enum.Scope.html
+[`parse_source`]: https://docs.rs/agents-skills/latest/agents_skills/core/source/fn.parse_source.html
+[`owner_repo`]: https://docs.rs/agents-skills/latest/agents_skills/core/source/fn.owner_repo.html
+[`discover_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.discover_skills.html
+[`filter_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.filter_skills.html
+[`parse_skill_md`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.parse_skill_md.html
+[`install_skill`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.install_skill.html
+[`list_installed_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.list_installed_skills.html
+[`sanitize_name`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.sanitize_name.html
+[`move_skill`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.move_skill.html
+[`list_disabled_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.list_disabled_skills.html
+[`disabled_skills_dir`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.disabled_skills_dir.html
+[`get_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.get_agent.html
+[`detect_installed_agents`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.detect_installed_agents.html
+[`Agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/struct.Agent.html
+[`Env`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/struct.Env.html
+[`link_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.link_agent.html
+[`unlink_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.unlink_agent.html
+[`is_agent_linked`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.is_agent_linked.html
+[`read_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.read_local_lock.html
+[`write_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.write_local_lock.html
+[`compute_folder_hash`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.compute_folder_hash.html
