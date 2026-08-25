@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::core::agents::{
-    AGENTS, Agent, Env, agent_display, config_home, detect_installed_agents, disabled_skills_dir,
-    ensure_universal_agents, get_agent, home, is_installed,
+    AGENTS, Agent, Env, agent_display, agent_skills_dir, config_home, detect_installed_agents,
+    disabled_skills_dir, ensure_universal_agents, get_agent, home, is_installed,
 };
 use crate::core::discover::{Skill, discover_skills, filter_skills};
 use crate::core::fetch::fetch_source;
@@ -358,11 +358,28 @@ impl Manager {
                 is_installed(a, &self.env)
                     || (!a.is_universal() && is_agent_linked(a, global, &self.env))
             })
-            .map(|a| AgentStatus {
-                name: a.name.to_string(),
-                display: a.display.to_string(),
-                linked: is_agent_linked(a, global, &self.env),
-                canonical: a.is_universal(),
+            .map(|a| {
+                let linked = is_agent_linked(a, global, &self.env);
+                let canonical = a.is_universal();
+                // For unlinked, non-canonical agents, report any skills living inside
+                // the agent's own skills dir (canonical/linked agents share the
+                // canonical dir, whose contents are shown by `list` instead).
+                let internal_skills = if linked || canonical {
+                    Vec::new()
+                } else if let Some(dir) = agent_skills_dir(a, global, &self.env) {
+                    discover_skills(&dir, None, false, false)
+                        .map(|skills| skills.into_iter().map(|s| s.name).collect())
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                AgentStatus {
+                    name: a.name.to_string(),
+                    display: a.display.to_string(),
+                    linked,
+                    canonical,
+                    internal_skills,
+                }
             })
             .collect();
         // Stable sort: canonical agents first, others keep table order.
@@ -1095,6 +1112,10 @@ pub struct AgentStatus {
     pub linked: bool,
     /// Whether the agent natively uses the canonical dir (no link involved).
     pub canonical: bool,
+    /// Names of skills inside the agent's own skills dir. Only populated for
+    /// unlinked, non-canonical agents that already contain skills; empty for
+    /// linked/canonical agents (they share the canonical dir, shown by `list`).
+    pub internal_skills: Vec<String>,
 }
 
 /// Result of [`Manager::agent`].

@@ -115,11 +115,29 @@ fn agent_status_prints_installed_agents_and_link_state() {
         .success()
         .stdout(predicate::str::contains("Agent link status"))
         .stdout(predicate::str::contains("Claude Code"))
-        .stdout(predicate::str::contains("(linked)"))
+        .stdout(predicate::str::contains(") — linked"))
         .stdout(predicate::str::contains("CodeBuddy"))
-        .stdout(predicate::str::contains(
-            "not linked) — run `agents-skills agent --link codebuddy`",
-        ));
+        .stdout(predicate::str::contains("codebuddy) — not linked"));
+}
+
+#[test]
+fn agent_status_shows_unlinked_agents_internal_skills() {
+    let p = TestProject::new();
+    // CodeBuddy is detected via `.codebuddy` in the cwd: installed but not linked.
+    std::fs::create_dir_all(p.path().join(".codebuddy/skills/pdf")).unwrap();
+    std::fs::write(
+        p.path().join(".codebuddy/skills/pdf/SKILL.md"),
+        "---\nname: pdf\ndescription: does pdf\n---\nbody",
+    )
+    .unwrap();
+
+    p.skills()
+        .args(["agent", "--status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CodeBuddy"))
+        .stdout(predicate::str::contains("not linked"))
+        .stdout(predicate::str::contains("private skills: pdf"));
 }
 
 #[test]
@@ -158,7 +176,7 @@ fn agent_status_marks_universal_agents_as_canonical() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Warp"))
-        .stdout(predicate::str::contains("(canonical dir)"));
+        .stdout(predicate::str::contains(") — canonical"));
 }
 
 #[test]

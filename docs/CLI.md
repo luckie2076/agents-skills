@@ -150,7 +150,9 @@ agents-skills agent [agents...] (--link | --unlink | --status) [options]
 
 `--link`/`--unlink`/`--status` 互斥，须指定其一。`--status` 区分两种可见状态：
 原生读取规范目录的 agent（Codex、Cursor、Warp 等）标记 `(canonical dir)`，符号
-链接接入的标记 `(linked)`。agent 默认为自动探测结果，`'*'` 表示全部。
+链接接入的标记 `(linked)`。对**未链接**的 agent，若其自身技能目录已含有技能，会以
+`(internal N skills: ...)` 列出这些技能名，提示可用 `--link --migrate` 迁移。
+agent 默认为自动探测结果，`'*'` 表示全部。
 
 ```bash
 agents-skills agent --link                       # 链接全部已安装 agent

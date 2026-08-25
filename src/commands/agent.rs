@@ -39,19 +39,26 @@ fn render_status(manager: &Manager, global: bool) {
     // Order comes from the library: canonical agents first, others keep table order.
     for s in manager.agent_status(global) {
         if s.canonical {
-            println!("  {DIM}•{RESET} {} {DIM}(canonical dir){RESET}", s.display);
-        } else if s.linked {
-            println!("  {GREEN}✓{RESET} {} {DIM}(linked){RESET}", s.display);
-        } else {
-            let hint = if global {
-                format!("run `agents-skills agent --link {} -g`", s.name)
-            } else {
-                format!("run `agents-skills agent --link {}`", s.name)
-            };
             println!(
-                "  {YELLOW}!{RESET} {} {DIM}(not linked) — {hint}{RESET}",
-                s.display
+                "  {DIM}•{RESET} {} {DIM}({}) — canonical{RESET}",
+                s.display, s.name
             );
+        } else if s.linked {
+            println!(
+                "  {GREEN}✓{RESET} {} {DIM}({}) — linked{RESET}",
+                s.display, s.name
+            );
+        } else {
+            println!(
+                "  {YELLOW}!{RESET} {} {DIM}({}) — not linked{RESET}",
+                s.display, s.name
+            );
+            if !s.internal_skills.is_empty() {
+                println!(
+                    "      {DIM}private skills: {}{RESET}",
+                    s.internal_skills.join(", "),
+                );
+            }
         }
     }
     println!();

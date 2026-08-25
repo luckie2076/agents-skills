@@ -650,6 +650,13 @@ pub const AGENTS: &[Agent] = &[
         Detect::Home(".codeium/windsurf"),
     ),
     Agent::new(
+        "workbuddy",
+        "WorkBuddy",
+        ".workbuddy/skills",
+        GlobalDir::Home(".workbuddy/skills"),
+        Detect::HomeOrCwd(".workbuddy"),
+    ),
+    Agent::new(
         "zed",
         "Zed",
         ".agents/skills",

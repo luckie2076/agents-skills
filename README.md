@@ -2,7 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/agents-skills.svg)](https://crates.io/crates/agents-skills)
 [![docs.rs](https://img.shields.io/docsrs/agents-skills.svg)](https://docs.rs/agents-skills)
-[![CI](https://github.com/luckie2076/agents-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/luckie2076/agents-skills/actions)
+[![CI](https://github.com/skill-one/agents-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/skill-one/agents-skills/actions)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 一个极简的 AI Agent 技能安装与管理工具：所有技能集中存放在一个**规范目录**，
@@ -46,6 +46,8 @@ agents-skills enable pdf                           # 重新启用（disable 的�
 
 - `-g/--global` 切换作用域：默认项目级 `./.agents/skills`，加 `-g` 为全局
   `~/.agents/skills`。
+- `agent --status` 对未链接的 agent，若其自身目录已含技能，会列出这些技能名，
+  提示可用 `--link --migrate` 迁移；已链接/规范目录的 agent 内容由 `list` 展示。
 - 已禁用的技能 `update` 会跳过；`list` 始终展示全部技能并标注 `enabled`/`disabled`。
 
 ### 来源格式

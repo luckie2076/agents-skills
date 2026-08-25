@@ -23,6 +23,10 @@ fn main() -> agents_skills::Result<()> {
 
     for s in manager.agent_status(false) {
         println!("{}: linked={}", s.name, s.linked);
+        // 未链接的 agent 若自身目录已含技能，会通过 internal_skills 列出（便于随后 --migrate）。
+        if !s.internal_skills.is_empty() {
+            println!("  internal: {}", s.internal_skills.join(", "));
+        }
     }
     Ok(())
 }

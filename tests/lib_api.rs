@@ -179,6 +179,35 @@ fn lib_agent_status_reports_canonical_and_linked() {
 }
 
 #[test]
+fn lib_agent_status_reports_internal_skills_for_unlinked_agents() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().join("home");
+    let cwd = tmp.path().join("project");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    // trae is detected via ~/.trae and not linked; it holds an internal skill.
+    std::fs::create_dir_all(home.join(".trae/skills/docx")).unwrap();
+    std::fs::write(
+        home.join(".trae/skills/docx/SKILL.md"),
+        "---\nname: docx\ndescription: does docx\n---\nbody",
+    )
+    .unwrap();
+
+    let manager = Manager::builder()
+        .home(home.clone())
+        .config(tmp.path().join("config"))
+        .cwd(cwd.clone())
+        .build();
+
+    let statuses = manager.agent_status(true);
+    let trae = statuses.iter().find(|s| s.name == "trae").unwrap();
+    assert!(!trae.canonical);
+    assert!(!trae.linked);
+    assert_eq!(trae.internal_skills, vec!["docx".to_string()]);
+}
+
+#[test]
 fn lib_agent_status_orders_canonical_first() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path().join("home");

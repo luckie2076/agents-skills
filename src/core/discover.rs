@@ -189,10 +189,13 @@ fn walk_skill_dirs(
         return;
     };
     for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else {
+        // Use fs::metadata (follows symlinks) instead of entry.metadata /
+        // entry.file_type so symlinked skill dirs — e.g. goose's
+        // `pdf -> ~/.skills-manager/skills/pdf` — are traversed, not skipped.
+        let Ok(md) = fs::metadata(entry.path()) else {
             continue;
         };
-        if !ft.is_dir() {
+        if !md.is_dir() {
             continue;
         }
         let child = entry.path();
@@ -225,10 +228,10 @@ fn find_all_skill_dirs(
         return;
     };
     for entry in entries.flatten() {
-        let Ok(ft) = entry.file_type() else {
+        let Ok(md) = fs::metadata(entry.path()) else {
             continue;
         };
-        if !ft.is_dir() {
+        if !md.is_dir() {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
