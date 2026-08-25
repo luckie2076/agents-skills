@@ -1,11 +1,11 @@
 [package]
 name = "agents-skills"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "A minimal, stable, easy-to-understand skill installer and manager for AI agents"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/luckie2076/agents-skills"
-homepage = "https://github.com/luckie2076/agents-skills"
+repository = "https://github.com/skill-one/agents-skills"
+homepage = "https://github.com/skill-one/agents-skills"
 readme = "README.md"
 keywords = ["skills", "ai-agents", "cli", "installer", "claude"]
 categories = ["command-line-utilities", "development-tools"]
