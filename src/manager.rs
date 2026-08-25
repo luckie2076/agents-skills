@@ -607,8 +607,8 @@ impl Manager {
     /// # Selection semantics
     ///
     /// - `skills` empty and `all` false → nothing is removed; the outcome reports the
-    ///   currently installed names (used by the CLI to print a hint).
-    /// - `all` true → every installed skill plus every lockfile key.
+    ///   currently enabled names (used by the CLI to print a hint).
+    /// - `all` true → every installed skill (enabled or disabled) plus every lockfile key.
     ///
     /// # Examples
     ///
@@ -633,7 +633,11 @@ impl Manager {
     pub fn remove(&self, req: &RemoveRequest) -> Result<RemoveOutcome> {
         let global = req.global;
 
+        // Disabled skills are still installed (parked in `disabled-skills`): scan them
+        // too so `remove <name>` and `remove --all` can find and delete them, even when
+        // they have no lockfile entry (e.g. symlinked by a third-party tool).
         let installed = scan_installed(&self.env, global);
+        let disabled = scan_disabled(&self.env, global);
 
         // List-only mode (no skills and not --all).
         if req.skills.is_empty() && !req.all {
@@ -648,7 +652,12 @@ impl Manager {
         let lock = read_local_lock(&lock_path(&self.env, global));
         let lock_keys: Vec<String> = lock.skills.keys().cloned().collect();
         let requested: Vec<String> = if req.all {
-            installed.iter().chain(lock_keys.iter()).cloned().collect()
+            installed
+                .iter()
+                .chain(disabled.iter())
+                .chain(lock_keys.iter())
+                .cloned()
+                .collect()
         } else {
             req.skills.clone()
         };
@@ -660,7 +669,7 @@ impl Manager {
             });
         }
 
-        let selected = resolve_to_remove(&requested, &installed, &lock_keys);
+        let selected = resolve_to_remove(&requested, &installed, &disabled, &lock_keys);
         if selected.is_empty() {
             return Ok(RemoveOutcome {
                 installed,
@@ -1319,10 +1328,16 @@ fn matches_skill(name: &str, filter: &[String]) -> bool {
 fn resolve_to_remove(
     requested: &[String],
     installed: &[String],
+    disabled: &[String],
     lock_keys: &[String],
 ) -> Vec<String> {
     let mut identity: HashMap<String, String> = HashMap::new();
     for folder in installed {
+        identity
+            .entry(sanitize_name(folder))
+            .or_insert_with(|| folder.clone());
+    }
+    for folder in disabled {
         identity
             .entry(sanitize_name(folder))
             .or_insert_with(|| folder.clone());
@@ -1463,8 +1478,22 @@ mod tests {
 
         // Lock keys take priority: "pdf" (not the on-disk "PDF" casing).
         assert_eq!(
-            resolve_to_remove(&requested, &installed, &lock_keys),
+            resolve_to_remove(&requested, &installed, &[], &lock_keys),
             vec!["pdf"]
+        );
+    }
+
+    #[test]
+    fn resolve_to_remove_matches_disabled_without_lock() {
+        let installed = Vec::new();
+        let disabled = vec!["legacy".to_string()];
+        let lock_keys = Vec::new();
+        let requested = vec!["legacy".to_string()];
+
+        // A disabled skill with no lockfile entry is still resolvable for removal.
+        assert_eq!(
+            resolve_to_remove(&requested, &installed, &disabled, &lock_keys),
+            vec!["legacy"]
         );
     }
 

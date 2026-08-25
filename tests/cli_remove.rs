@@ -95,3 +95,47 @@ fn remove_nonexistent_prints_no_match() {
         .success()
         .stdout(predicate::str::contains("No matching skills found"));
 }
+
+#[test]
+fn remove_deletes_disabled_skill_without_lock_entry() {
+    let p = TestProject::new();
+    // Simulate a skill parked in the disabled dir by a third-party tool: no lockfile entry.
+    let disabled = p.path().join(".agents/disabled-skills/legacy");
+    std::fs::create_dir_all(&disabled).unwrap();
+    std::fs::write(
+        disabled.join("SKILL.md"),
+        "---\nname: legacy\ndescription: does legacy\n---\n\n# legacy\n",
+    )
+    .unwrap();
+
+    p.skills()
+        .args(["remove", "legacy"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Successfully removed 1 skill"));
+
+    p.assert_absent(".agents/disabled-skills/legacy");
+}
+
+#[test]
+fn remove_all_deletes_disabled_skills() {
+    let p = TestProject::new();
+    // An enabled skill plus a disabled one (no lock entry for the disabled).
+    let src = p.write_skill_source("my-skill", "pdf");
+    p.skills()
+        .args(["add", src.to_str().unwrap()])
+        .assert()
+        .success();
+    let disabled = p.path().join(".agents/disabled-skills/legacy");
+    std::fs::create_dir_all(&disabled).unwrap();
+    std::fs::write(
+        disabled.join("SKILL.md"),
+        "---\nname: legacy\ndescription: does legacy\n---\n\n# legacy\n",
+    )
+    .unwrap();
+
+    p.skills().args(["remove", "--all"]).assert().success();
+
+    p.assert_absent(".agents/skills/pdf");
+    p.assert_absent(".agents/disabled-skills/legacy");
+}
