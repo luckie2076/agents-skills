@@ -427,7 +427,7 @@ mod tests {
                 &env,
                 false
             ),
-            LinkOutcome::Linked
+            LinkOutcome::Linked { .. }
         ));
 
         let installed = list_installed_skills(&env, false, &[]);

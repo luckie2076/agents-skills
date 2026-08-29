@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::core::agents::{
-    AGENTS, Agent, Env, agent_display, agent_skills_dir, config_home, detect_installed_agents,
-    disabled_skills_dir, ensure_universal_agents, get_agent, home, is_installed,
+    AGENTS, Agent, Env, agent_display, config_home, detect_installed_agents, disabled_skills_dir,
+    ensure_universal_agents, get_agent, home, is_installed,
 };
 use crate::core::discover::{Skill, discover_skills, filter_skills};
 use crate::core::fetch::fetch_source;
@@ -19,7 +19,9 @@ use crate::core::install::{
     get_canonical_path, install_skill, list_disabled_skills, list_installed_skills, move_skill,
     sanitize_name, scan_disabled, scan_installed,
 };
-use crate::core::link::{LinkOutcome, is_agent_linked, link_agent, unlink_agent};
+use crate::core::link::{
+    LinkOutcome, is_agent_linked, link_agent, pending_backup, private_content, unlink_agent,
+};
 use crate::core::lock::{
     LockEntry, compute_folder_hash, find_lock_entry, global_lock_path, local_lock_path,
     lock_fields, read_local_lock, write_local_lock,
@@ -246,15 +248,20 @@ impl Manager {
     /// directory-level symlink, so every install/update/remove is immediately
     /// visible to all linked agents. With `req.unlink`, disconnects those dirs
     /// instead — removes the symlink (only when it points at the canonical dir)
-    /// and recreates an empty real dir; the canonical dir and its skills are
-    /// left untouched.
+    /// and restores any parked backup content into a real dir; the canonical dir
+    /// and its skills are left untouched.
     ///
-    /// When linking, an agent dir that already holds content is refused; pass
-    /// `req.migrate` to move its skill subdirs into the canonical dir first.
-    /// Skills whose name already exists in the canonical dir are skipped (the
-    /// canonical copy wins, reported via [`LinkOutcome::Migrated`] `skipped`);
-    /// non-skill entries abort the migration without changes. Legacy per-skill
-    /// symlinks pointing into the canonical dir are taken over automatically.
+    /// Pre-existing content is never destroyed. When linking, every entry of the
+    /// agent dir that does not go into the canonical dir is parked in a backup
+    /// slot (`<base>/.agents/backup-skills/<agent>`); unlink restores it. With
+    /// `req.migrate`, skill subdirs are moved into the canonical dir instead —
+    /// name clashes keep the canonical copy (the agent-side copy is parked,
+    /// reported via [`LinkOutcome::Migrated`] `skipped`) — and only non-skill
+    /// entries are parked. Rerunning with `migrate` on an already linked agent
+    /// pulls parked skills out of the backup slot. Legacy per-skill symlinks
+    /// pointing into the canonical dir are taken over automatically. Linking is
+    /// refused only when the agent dir is a foreign symlink or a stale non-empty
+    /// backup slot exists.
     ///
     /// Universal agents (whose skills dir already is the canonical dir) report
     /// [`LinkOutcome::AlreadyLinked`]. Agents whose root dir does not exist in
@@ -295,6 +302,11 @@ impl Manager {
     /// Agents that natively read the canonical dir (universal) report `canonical`;
     /// agents connected via a directory-level symlink report `linked`.
     ///
+    /// For unlinked, non-canonical agents the status classifies the agent dir's
+    /// private content (`internal_skills` / `internal_others`, the same rules
+    /// link and migrate use) and reports a pending backup slot (`pending_backup`)
+    /// when one is waiting to be restored by unlink.
+    ///
     /// Ordering: agents that natively use the canonical dir (`canonical: true`)
     /// come first, then the remaining agents — both groups keep the static agent
     /// table order. This is the exact order `agent --status` renders; callers do
@@ -309,17 +321,16 @@ impl Manager {
             .map(|a| {
                 let linked = is_agent_linked(a, global, &self.env);
                 let canonical = a.is_universal();
-                // For unlinked, non-canonical agents, report any skills living inside
-                // the agent's own skills dir (canonical/linked agents share the
+                // For unlinked, non-canonical agents, classify the private content
+                // of the agent's own skills dir (canonical/linked agents share the
                 // canonical dir, whose contents are shown by `list` instead).
-                let internal_skills = if linked || canonical {
-                    Vec::new()
-                } else if let Some(dir) = agent_skills_dir(a, global, &self.env) {
-                    discover_skills(&dir, None, false)
-                        .map(|skills| skills.into_iter().map(|s| s.name).collect())
-                        .unwrap_or_default()
+                let (internal_skills, internal_others, pending_backup) = if linked || canonical {
+                    (Vec::new(), Vec::new(), None)
                 } else {
-                    Vec::new()
+                    let (skills, others) = private_content(a, global, &self.env);
+                    let backup = pending_backup(a, global, &self.env)
+                        .map(|(path, items)| BackupStatus { path, items });
+                    (skills, others, backup)
                 };
                 AgentStatus {
                     name: a.name.to_string(),
@@ -327,6 +338,8 @@ impl Manager {
                     linked,
                     canonical,
                     internal_skills,
+                    internal_others,
+                    pending_backup,
                 }
             })
             .collect();
@@ -962,7 +975,8 @@ pub struct AgentRequest {
     pub global: bool,
     /// Unlink (disconnect) the agents' skills dirs instead of linking them.
     pub unlink: bool,
-    /// Move existing agent skills dirs into the canonical dir before linking.
+    /// Move existing skills into the canonical dir when linking (also pulls
+    /// skills parked in the backup slot of an already linked agent).
     pub migrate: bool,
 }
 
@@ -1081,10 +1095,25 @@ pub struct AgentStatus {
     pub linked: bool,
     /// Whether the agent natively uses the canonical dir (no link involved).
     pub canonical: bool,
-    /// Names of skills inside the agent's own skills dir. Only populated for
-    /// unlinked, non-canonical agents that already contain skills; empty for
-    /// linked/canonical agents (they share the canonical dir, shown by `list`).
+    /// Skills inside the agent's own skills dir: real subdirs and dir-targeting
+    /// symlinks — the same classification link and migrate use. Only populated
+    /// for unlinked, non-canonical agents; empty for linked/canonical agents
+    /// (they share the canonical dir, shown by `list`).
     pub internal_skills: Vec<String>,
+    /// Non-skill entries (files, symlinks to non-directories) inside the agent's
+    /// own skills dir. Same population rules as [`AgentStatus::internal_skills`].
+    pub internal_others: Vec<String>,
+    /// Backup slot with parked content waiting for unlink to restore, if any.
+    pub pending_backup: Option<BackupStatus>,
+}
+
+/// A pending backup slot (used by `agent --status`).
+#[derive(Debug)]
+pub struct BackupStatus {
+    /// Backup slot directory (`.agents/backup-skills/<agent>`).
+    pub path: PathBuf,
+    /// Names of the entries parked in the slot.
+    pub items: Vec<String>,
 }
 
 /// Result of [`Manager::agent`].

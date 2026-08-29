@@ -34,8 +34,9 @@ agents-skills agent --status          # 查看各 agent 的链接状态
 共享。常用命令：
 
 ```bash
-agents-skills agent --link claude-code --migrate   # 链接并迁移存量技能
-agents-skills agent --unlink claude-code           # 解除链接
+agents-skills agent --link claude-code            # 链接（存量内容自动备份）
+agents-skills agent --link claude-code --migrate  # 链接并把存量技能迁入规范目录
+agents-skills agent --unlink claude-code          # 解除链接（并恢复备份内容）
 agents-skills add anthropics/skills@pdf            # 仅安装指定技能
 agents-skills list --json                          # 机器可读输出
 agents-skills remove pdf                           # 移除指定技能
@@ -46,8 +47,12 @@ agents-skills enable pdf                           # 重新启用（disable 的�
 
 - `-g/--global` 切换作用域：默认项目级 `./.agents/skills`，加 `-g` 为全局
   `~/.agents/skills`。
-- `agent --status` 对未链接的 agent，若其自身目录已含技能，会列出这些技能名，
-  提示可用 `--link --migrate` 迁移；已链接/规范目录的 agent 内容由 `list` 展示。
+- `agent --link` 遇到 agent 技能目录已有内容时不拒绝：整个目录原样移入备份槽
+  `.agents/backup-skills/<agent>/skills/`，`agent --unlink` 时整体恢复；加 `--migrate`
+  则把其中的技能移入规范目录（同名时以规范目录为准，agent 侧副本留在备份）。
+- `agent --status` 对未链接的 agent，分类列出其自身技能目录中的内容
+  （`private skills` / `other files`）以及待恢复的备份（`backup parked at`）；
+  已链接/规范目录的 agent 内容由 `list` 展示。
 - 已禁用的技能 `update` 会跳过；`list` 始终展示全部技能并标注 `enabled`/`disabled`。
 
 ### 来源格式

@@ -37,19 +37,26 @@ fn agent_link_creates_relative_dir_symlink() {
 }
 
 #[test]
-fn agent_link_refuses_content_and_migrate_adopts_it() {
+fn agent_link_parks_content_and_migrate_adopts_it() {
     let p = TestProject::new();
     let existing = p.path().join(".claude/skills/my-skill");
     std::fs::create_dir_all(&existing).unwrap();
     std::fs::write(existing.join("SKILL.md"), "x").unwrap();
 
+    // Plain link parks the existing skill in the backup slot and links anyway.
     p.skills()
         .args(["agent", "--link", "claude-code"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("migrate"));
+        .stdout(predicate::str::contains("linked"))
+        .stdout(predicate::str::contains("parked"));
 
-    // --migrate moves the skill into the canonical dir and links.
+    let slot = p.path().join(".agents/backup-skills/claude-code");
+    assert!(slot.join("skills/my-skill/SKILL.md").exists());
+    assert!(p.path().join(".claude/skills").is_symlink());
+    assert!(!p.path().join(".agents/skills").exists());
+
+    // --migrate pulls the parked skill into the canonical dir.
     p.skills()
         .args(["agent", "--link", "claude-code", "--migrate"])
         .assert()
@@ -58,13 +65,14 @@ fn agent_link_refuses_content_and_migrate_adopts_it() {
 
     p.assert_exists(".agents/skills/my-skill/SKILL.md");
     assert!(p.path().join(".claude/skills").is_symlink());
+    // The slot keeps only non-skill leftovers (none here), so it is gone.
+    assert!(!slot.exists());
 }
 
 #[test]
-fn agent_link_refuses_dir_with_only_stray_files() {
+fn agent_link_parks_stray_files_and_unlink_restores_them() {
     let p = TestProject::new();
-    // A real file is not a skill: linking is refused, nothing is touched, and the
-    // hint does not (wrongly) point at --migrate.
+    // A real file is not a skill: it is parked (not migrated), and linking succeeds.
     std::fs::create_dir_all(p.path().join(".claude/skills")).unwrap();
     std::fs::write(p.path().join(".claude/skills/README.txt"), "x").unwrap();
 
@@ -72,11 +80,25 @@ fn agent_link_refuses_dir_with_only_stray_files() {
         .args(["agent", "--link", "claude-code"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("non-skill files"))
-        .stdout(predicate::str::contains("rerun with --migrate").not());
+        .stdout(predicate::str::contains("parked existing content"));
+
+    assert!(p.path().join(".claude/skills").is_symlink());
+    assert!(
+        p.path()
+            .join(".agents/backup-skills/claude-code/skills/README.txt")
+            .exists()
+    );
+
+    // Unlink restores the parked file into a real dir.
+    p.skills()
+        .args(["agent", "--unlink", "claude-code"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("restored README.txt"));
 
     assert!(p.path().join(".claude/skills/README.txt").exists());
     assert!(!p.path().join(".claude/skills").is_symlink());
+    assert!(!p.path().join(".agents/backup-skills/claude-code").exists());
 }
 
 #[test]
@@ -96,6 +118,32 @@ fn agent_unlink_restores_real_dir() {
     let dir = p.path().join(".claude/skills");
     assert!(dir.is_dir());
     assert!(!dir.is_symlink());
+}
+
+#[test]
+fn agent_link_unlink_roundtrip_restores_parked_skills() {
+    let p = TestProject::new();
+    let existing = p.path().join(".claude/skills/my-skill");
+    std::fs::create_dir_all(&existing).unwrap();
+    std::fs::write(existing.join("SKILL.md"), "x").unwrap();
+
+    p.skills()
+        .args(["agent", "--link", "claude-code"])
+        .assert()
+        .success();
+    assert!(p.path().join(".claude/skills").is_symlink());
+
+    p.skills()
+        .args(["agent", "--unlink", "claude-code"])
+        .assert()
+        .success();
+
+    // The parked skill is back in a real dir; the backup slot is gone.
+    let dir = p.path().join(".claude/skills");
+    assert!(dir.is_dir());
+    assert!(!dir.is_symlink());
+    assert!(dir.join("my-skill/SKILL.md").exists());
+    assert!(!p.path().join(".agents/backup-skills/claude-code").exists());
 }
 
 #[test]
@@ -121,7 +169,7 @@ fn agent_status_prints_installed_agents_and_link_state() {
 }
 
 #[test]
-fn agent_status_shows_unlinked_agents_internal_skills() {
+fn agent_status_classifies_unlinked_agents_private_content() {
     let p = TestProject::new();
     // CodeBuddy is detected via `.codebuddy` in the cwd: installed but not linked.
     std::fs::create_dir_all(p.path().join(".codebuddy/skills/pdf")).unwrap();
@@ -130,6 +178,7 @@ fn agent_status_shows_unlinked_agents_internal_skills() {
         "---\nname: pdf\ndescription: does pdf\n---\nbody",
     )
     .unwrap();
+    std::fs::write(p.path().join(".codebuddy/skills/README.txt"), "x").unwrap();
 
     p.skills()
         .args(["agent", "--status"])
@@ -137,7 +186,35 @@ fn agent_status_shows_unlinked_agents_internal_skills() {
         .success()
         .stdout(predicate::str::contains("CodeBuddy"))
         .stdout(predicate::str::contains("not linked"))
-        .stdout(predicate::str::contains("private skills: pdf"));
+        .stdout(predicate::str::contains("private skills: pdf"))
+        .stdout(predicate::str::contains("other files: README.txt"));
+}
+
+#[test]
+fn agent_status_shows_pending_backup_slot() {
+    let p = TestProject::new();
+    let existing = p.path().join(".claude/skills/my-skill");
+    std::fs::create_dir_all(&existing).unwrap();
+    std::fs::write(existing.join("SKILL.md"), "x").unwrap();
+
+    p.skills()
+        .args(["agent", "--link", "claude-code"])
+        .assert()
+        .success();
+
+    // The agent is linked now; remove the link manually to simulate a
+    // half-disconnected state — the parked slot must stay visible in status.
+    std::fs::remove_file(p.path().join(".claude/skills")).unwrap();
+
+    p.skills()
+        .env("HOME", p.path())
+        .args(["agent", "--status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Claude Code"))
+        .stdout(predicate::str::contains("not linked"))
+        .stdout(predicate::str::contains("backup parked at"))
+        .stdout(predicate::str::contains("my-skill"));
 }
 
 #[test]

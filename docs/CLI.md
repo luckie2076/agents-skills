@@ -138,25 +138,38 @@ agents-skills enable  --all    # 启用全部已禁用技能
 agents-skills agent [agents...] (--link | --unlink | --status) [options]
 ```
 
-| 选项           | 说明                                            |
-| -------------- | ----------------------------------------------- |
-| `-g, --global` | 操作全局技能目录（默认项目）                    |
-| `--link`       | 把 agent 技能目录链接到规范目录                 |
-| `--unlink`     | 解除 agent 与规范目录的链接                     |
-| `--status`     | 查看链接状态（只读）                            |
-| `--migrate`    | 迁移 agent 目录中的存量技能（仅配合 `--link`）  |
+| 选项           | 说明                                                     |
+| -------------- | -------------------------------------------------------- |
+| `-g, --global` | 操作全局技能目录（默认项目）                             |
+| `--link`       | 把 agent 技能目录链接到规范目录（存量内容自动备份）      |
+| `--unlink`     | 解除 agent 与规范目录的链接，并恢复备份的内容            |
+| `--status`     | 查看链接状态（只读）                                     |
+| `--migrate`    | 把存量技能迁入规范目录，含备份槽中暂存的技能（仅配合 `--link`） |
 
 `--link`/`--unlink`/`--status` 互斥，须指定其一。`--status` 区分两种可见状态：
 原生读取规范目录的 agent（Codex、Cursor、Warp 等）标记 `(canonical dir)`，符号
-链接接入的标记 `(linked)`。对**未链接**的 agent，若其自身技能目录已含有技能，会以
-`(internal N skills: ...)` 列出这些技能名，提示可用 `--link --migrate` 迁移。
+链接接入的标记 `(linked)`。对**未链接**的 agent，会分类列出其自身技能目录中的
+内容：`private skills: ...` 为技能（子目录及指向目录的符号链接），`other files: ...`
+为其他文件；若存在待恢复的备份，以 `backup parked at <路径> (<条目>) — unlink restores`
+显示。
 agent 默认为自动探测结果，`'*'` 表示全部。
+
+链接对已有内容的处理（从不销毁数据）：
+
+- 目录为空：直接替换为链接。
+- 其他情况：整个技能目录原样移入备份槽 `.agents/backup-skills/<agent>/skills/`
+  （项目级在 `./.agents/backup-skills/`，全局级在 `~/.agents/backup-skills/`，槽内含
+  `manifest.json`），然后建立链接；`--unlink` 时用一次原子 rename 整体恢复。
+- 加 `--migrate`：备份后把其中的技能目录移入规范目录；同名冲突保留规范目录
+  副本，agent 侧副本留在备份。
+- 仅两种情况拒绝：目录本身是指向别处的符号链接；上次链接的备份尚未恢复。
 
 ```bash
 agents-skills agent --link                       # 链接全部已安装 agent
-agents-skills agent --link claude-code --migrate # 链接并迁移存量技能
+agents-skills agent --link claude-code           # 链接（存量内容自动备份）
+agents-skills agent --link claude-code --migrate # 链接并把存量技能迁入规范目录
 agents-skills agent --status                     # 查看链接状态
-agents-skills agent --unlink claude-code         # 解除指定 agent 链接
+agents-skills agent --unlink claude-code         # 解除指定 agent 链接并恢复备份
 ```
 
 ## 相关概念

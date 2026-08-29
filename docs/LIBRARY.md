@@ -21,12 +21,18 @@ fn main() -> agents_skills::Result<()> {
     let outcome = manager.add(&AddRequest::new("anthropics/skills"))?; // 安装技能包
     println!("installed {} skill(s)", outcome.installed.len());
 
-    // agent_status 列出每个 agent 的链接状态；未链接且自带技能的 agent
-    // 会通过 internal_skills 暴露那些技能名（便于随后 --migrate）。
+    // agent_status 列出每个 agent 的链接状态；未链接且自带内容的 agent
+    // 会分类暴露私有的技能与其他文件，以及待恢复的备份槽。
     for s in manager.agent_status(false) {
         println!("{}: linked={}", s.name, s.linked);
         if !s.internal_skills.is_empty() {
-            println!("  internal: {}", s.internal_skills.join(", "));
+            println!("  skills: {}", s.internal_skills.join(", "));
+        }
+        if !s.internal_others.is_empty() {
+            println!("  others: {}", s.internal_others.join(", "));
+        }
+        if let Some(b) = &s.pending_backup {
+            println!("  backup at {}: {}", b.path.display(), b.items.join(", "));
         }
     }
     Ok(())
@@ -78,7 +84,10 @@ fn main() -> agents_skills::Result<()> {
   三选一互斥；库把 `--status` 拆为独立的 [`Manager::agent_status`]，因此
   [`AgentRequest`] 只需区分 link 与 unlink：`unlink: false`（默认）即 link，
   `unlink: true` 即 unlink，`migrate: true` 仅在 link 时生效（对应 CLI
-  `--link --migrate`）。
+  `--link --migrate`）。链接从不销毁已有内容：非空技能目录整体移入备份槽
+  `.agents/backup-skills/<agent>/skills/`，unlink 时一次 rename 恢复；`migrate: true`
+  把其中的技能移入规范目录（同名时规范目录副本优先）。仅当 agent 目录是指向
+  别处的符号链接，或存在未恢复的旧备份时报 [`LinkOutcome::Refused`]。
 
 ### 常见操作
 
@@ -150,6 +159,7 @@ cargo run --example add_skill   # 通过 Manager 安装到真实环境
 [`AgentRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentRequest.html
 [`AgentOutcome`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentOutcome.html
 [`AgentStatus`]: https://docs.rs/agents-skills/latest/agents_skills/struct.AgentStatus.html
+[`LinkOutcome::Refused`]: https://docs.rs/agents-skills/latest/agents_skills/enum.LinkOutcome.html
 [`ListRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListRequest.html
 [`ListedSkill`]: https://docs.rs/agents-skills/latest/agents_skills/struct.ListedSkill.html
 [`RemoveRequest`]: https://docs.rs/agents-skills/latest/agents_skills/struct.RemoveRequest.html
