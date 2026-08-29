@@ -5,103 +5,116 @@
 [![CI](https://github.com/skill-one/agents-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/skill-one/agents-skills/actions)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-一个极简的 AI Agent 技能安装与管理工具：所有技能集中存放在一个**规范目录**，
-通过一次 `agent --link` 即可让 [Claude Code](https://claude.com/code)、Codex、Cursor 等
-70+ 编程 Agent 全部可见可用——安装一次，处处生效。
+English | [简体中文](docs/zh-CN/README.md)
+
+A minimal installer and manager for AI agent skills: all skills live in one
+**canonical directory**, and a single `agent --link` makes them visible and
+usable to [Claude Code](https://claude.com/code), Codex, Cursor, and 70+ other
+coding agents — install once, works everywhere.
 
 ```bash
 cargo install agents-skills
 ```
 
-同时提供可嵌入的 Rust 库，见 [docs/LIBRARY.md](docs/LIBRARY.md)。
+Also ships as an embeddable Rust library — see [docs/LIBRARY.md](docs/LIBRARY.md).
 
-## 快速开始
-
-```bash
-agents-skills agent --link            # 链接所有已安装的 agent
-agents-skills add anthropics/skills   # 安装技能包（装进规范目录后所有 agent 立即可见）
-agents-skills list                    # 查看已安装技能
-agents-skills agent --status          # 查看各 agent 的链接状态
-```
-
-核心是链接：技能只在规范目录保存一份（项目级 `.agents/skills/` 或全局级
-`~/.agents/skills/`），`agent --link` 为每个已安装的 agent 在其技能目录创建指向
-规范目录的符号链接；之后 `add` 安装的技能所有 agent 立即可见，无需同步。
-
-## 功能说明
-
-`add`/`remove`/`update`/`disable`/`enable` 只操作规范目录，agent 通过符号链接自动
-共享。常用命令：
+## Quick start
 
 ```bash
-agents-skills agent --link claude-code            # 链接（存量内容自动备份）
-agents-skills agent --link claude-code --migrate  # 链接并把存量技能迁入规范目录
-agents-skills agent --unlink claude-code          # 解除链接（并恢复备份内容）
-agents-skills add anthropics/skills@pdf            # 仅安装指定技能
-agents-skills list --json                          # 机器可读输出
-agents-skills remove pdf                           # 移除指定技能
-agents-skills update                               # 按 lockfile 更新到最新版本
-agents-skills disable pdf                          # 禁用（移出规范目录，文件保留）
-agents-skills enable pdf                           # 重新启用（disable 的逆操作）
+agents-skills agent --link            # link all installed agents
+agents-skills add anthropics/skills   # install a skill pack (visible to every agent immediately once it lands in the canonical directory)
+agents-skills list                    # list installed skills
+agents-skills agent --status          # show the link status of each agent
 ```
 
-- 默认操作全局作用域 `~/.agents/skills`;`--project <目录>` 切换到项目级（在指定
-  目录的 `.agents/skills` 下，当前目录写 `--project .`）。
-- `agent --link` 遇到 agent 技能目录已有内容时不拒绝：整个目录原样移入备份槽
-  `.agents/backup-skills/<agent>/skills/`，`agent --unlink` 时整体恢复；加 `--migrate`
-  则把其中的技能移入规范目录（同名时以规范目录为准，agent 侧副本留在备份）。
-- `agent --status` 对未链接的 agent，分类列出其自身技能目录中的内容
-  （`private skills` / `other files`）以及待恢复的备份（`backup parked at`）；
-  已链接/规范目录的 agent 内容由 `list` 展示。
-- 已禁用的技能 `update` 会跳过；`list` 始终展示全部技能并标注 `enabled`/`disabled`。
+The core idea is linking: skills are stored exactly once in the canonical
+directory (project-level `.agents/skills/` or global `~/.agents/skills/`), and
+`agent --link` creates, for every installed agent, a symlink in its skills
+directory pointing at the canonical directory; skills installed afterwards via
+`add` become visible to all agents immediately — no syncing needed.
 
-### 来源格式
+## How it works
 
-`add` 的 `<source>` 参数支持：
+`add`/`remove`/`update`/`disable`/`enable` only operate on the canonical
+directory; agents share it automatically through the symlinks. Common commands:
 
-| 格式                | 示例                                                             |
+```bash
+agents-skills agent --link claude-code            # link (pre-existing content is backed up automatically)
+agents-skills agent --link claude-code --migrate  # link and migrate pre-existing skills into the canonical directory
+agents-skills agent --unlink claude-code          # unlink (and restore the backed-up content)
+agents-skills add anthropics/skills@pdf            # install only the specified skill
+agents-skills list --json                          # machine-readable output
+agents-skills remove pdf                           # remove a skill
+agents-skills update                               # update to the latest versions per the lockfile
+agents-skills disable pdf                          # disable (moved out of the canonical directory, files kept)
+agents-skills enable pdf                           # re-enable (inverse of disable)
+```
+
+- Commands operate on the global scope `~/.agents/skills` by default;
+  `--project <dir>` switches to the project scope (`.agents/skills` under the
+  given directory; use `--project .` for the current directory).
+- When an agent's skills directory already has content, `agent --link` does not
+  refuse: the whole directory is moved as-is into the backup slot
+  `.agents/backup-skills/<agent>/skills/`, and `agent --unlink` restores it in
+  full; with `--migrate`, the skills inside are moved into the canonical
+  directory (on name conflicts the canonical copy wins, and the agent-side copy
+  stays in the backup).
+- For unlinked agents, `agent --status` categorizes the contents of their own
+  skills directory (`private skills` / `other files`) plus any backup waiting
+  to be restored (`backup parked at`); content of linked/canonical agents is
+  shown by `list`.
+- `update` skips disabled skills; `list` always shows every skill, tagged
+  `enabled`/`disabled`.
+
+### Source formats
+
+The `<source>` argument of `add` accepts:
+
+| Format              | Example                                                          |
 | ------------------- | ---------------------------------------------------------------- |
-| 本地路径            | `./my-skill`, `/abs/path/skill`                                  |
-| GitHub 简写         | `owner/repo`, `owner/repo@skill`, `owner/repo/subpath`           |
+| Local path          | `./my-skill`, `/abs/path/skill`                                  |
+| GitHub shorthand    | `owner/repo`, `owner/repo@skill`, `owner/repo/subpath`           |
 | GitHub / GitLab URL | `https://github.com/owner/repo`, `https://gitlab.com/group/repo` |
 | SSH / git URL       | `git@github.com:owner/repo.git`                                  |
-| HTTPS（well-known） | `https://example.com/skills`（发现 → 下载兜底）                  |
-| HTTPS（下载）       | `.../skill.zip`, `.../skill.tar.gz`, 原始 `SKILL.md`             |
+| HTTPS (well-known)  | `https://example.com/skills` (discovery → download fallback)     |
+| HTTPS (download)    | `.../skill.zip`, `.../skill.tar.gz`, raw `SKILL.md`              |
 
-仓库内按优先级容器目录发现技能（`skills/`、`.curated/`、`.experimental/`、
-`.system/`），浅层遮蔽深层。
+Within a repository, skills are discovered in priority-ordered container
+directories (`skills/`, `.curated/`, `.experimental/`, `.system/`); shallower
+directories shadow deeper ones.
 
-### 安装位置
+### Install locations
 
-- **规范目录（唯一真实副本）** —— 项目级 `./.agents/skills/<name>`，全局级
-  `~/.agents/skills/<name>`。
-- **Agent 集成** —— 不原生读取规范目录的 agent 获得目录级符号链接：
-  `.claude/skills` → `../.agents/skills`（项目）或 `~/.claude/skills` →
-  `~/.agents/skills`（全局）。
+- **Canonical directory (the single real copy)** — project-level
+  `./.agents/skills/<name>`, global `~/.agents/skills/<name>`.
+- **Agent integration** — agents that do not natively read the canonical
+  directory get a directory-level symlink: `.claude/skills` →
+  `../.agents/skills` (project) or `~/.claude/skills` → `~/.agents/skills`
+  (global).
 
-## 命令速查表
+## Command cheat sheet
 
-| 命令      | 说明                              |
-| --------- | --------------------------------- |
-| `add`     | 从来源安装技能包                  |
-| `remove`  | 移除已安装技能                    |
-| `list`    | 列出已安装技能                    |
-| `update`  | 将技能更新到最新版本              |
-| `disable` | 禁用已安装技能                    |
-| `enable`  | 重新启用已禁用的技能              |
-| `agent`   | 链接/解除链接/查看 agent 链接状态 |
+| Command   | Description                            |
+| --------- | -------------------------------------- |
+| `add`     | Install a skill pack from a source     |
+| `remove`  | Remove installed skills                |
+| `list`    | List installed skills                  |
+| `update`  | Update skills to the latest version    |
+| `disable` | Disable an installed skill             |
+| `enable`  | Re-enable a disabled skill             |
+| `agent`   | Link / unlink / show agent link status |
 
-命令不设别名（极简接口，只认全名）。
+Commands have no aliases (a minimal interface — full names only).
 
-> 完整命令行参考见 [docs/CLI.md](docs/CLI.md)；库使用者见
-> [docs/LIBRARY.md](docs/LIBRARY.md)；项目开发者见
-> [docs/DEVELOPER.md](docs/DEVELOPER.md)。
+> For the full command-line reference see [docs/CLI.md](docs/CLI.md); library
+> users see [docs/LIBRARY.md](docs/LIBRARY.md); project developers see
+> [docs/DEVELOPER.md](docs/DEVELOPER.md).
 
 ## License
 
-在以下任一许可证下授权：
+Licensed under either of:
 
-- Apache License, Version 2.0（[LICENSE-APACHE](LICENSE-APACHE)）
-- MIT license（[LICENSE-MIT](LICENSE-MIT)）
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
 
-由你选择。
+at your option.

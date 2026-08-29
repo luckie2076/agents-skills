@@ -1,43 +1,51 @@
-# agents-skills 开发者文档
+# agents-skills Developer Guide
 
-面向**本项目开发者**：项目结构、开发流程、测试与发布。功能概览与 CLI 用法见
-[README](../README.md)，命令行参考见 [CLI.md](CLI.md)，库使用者见
-[LIBRARY.md](LIBRARY.md)。
+English | [简体中文](zh-CN/DEVELOPER.md)
 
-## 架构分层
+For **project developers**: project layout, development workflow, testing, and
+releasing. For a feature overview and CLI usage see the
+[README](../README.md), for the command reference see [CLI.md](CLI.md), for
+the library API see [LIBRARY.md](LIBRARY.md).
 
-项目刻意分层，库与 CLI 职责严格分离：
+## Architecture layers
 
-- **库**（`src/lib.rs` + `src/manager.rs` + `src/core/`）—— 纯数据：从不打印、
-  从不调用 `process::exit`，错误通过 `Result` 上抛。
-- **CLI**（`src/main.rs` + `src/cli.rs` + `src/commands/`）—— 库之上的薄渲染层：
-  只负责 clap 参数拆解、把请求结构体交给 `Manager`、再把结果渲染成人类/机器可读
-  输出并决定退出码。
+The project is deliberately layered, with a strict separation between the
+library and the CLI:
 
-每个 CLI 命令对应一个 `Manager` 方法，CLI 的 flag 对应请求结构体字段。新增能力时
-应先在 `core`/`Manager` 层实现，再在 CLI 层渲染；不要让 CLI 层直接碰领域逻辑。
+- **Library** (`src/lib.rs` + `src/manager.rs` + `src/core/`) — pure data:
+  never prints, never calls `process::exit`, and surfaces errors through
+  `Result`.
+- **CLI** (`src/main.rs` + `src/cli.rs` + `src/commands/`) — a thin rendering
+  layer on top of the library: it only splits clap arguments, hands request
+  structs to the `Manager`, then renders results as human/machine-readable
+  output and decides the exit code.
 
-## 项目结构
+Every CLI command maps to one `Manager` method, and CLI flags map to
+request-struct fields. When adding capabilities, implement them first in the
+`core`/`Manager` layer, then render them in the CLI layer; never let the CLI
+layer touch domain logic directly.
+
+## Project layout
 
 ```
 src/
-├── lib.rs              库根：Manager 门面 + 请求/结果类型 + 私有 core 模块
-├── manager.rs          高层 Manager 门面（add/list/remove/update/disable/enable/link）
-├── error.rs            统一错误类型与 Result 别名
-├── core/               领域逻辑（纯函数、依赖可注入）
-│   ├── mod.rs          模块组织与重导出
-│   ├── source.rs       来源字符串解析
-│   ├── agents.rs       Agent → 技能目录映射表
-│   ├── discover.rs     SKILL.md 发现 + frontmatter 解析
-│   ├── fetch.rs        git 克隆 / HTTP 下载 / 归档解包
-│   ├── github.rs       GitHub API 单技能快速拉取
-│   ├── install.rs      安装技能到规范目录 + 已装清单
-│   ├── link.rs         目录级 agent 链接（link/unlink/migrate）
-│   ├── lock.rs         skills-lock.json 读写 + 内容哈希
-│   └── test_utils.rs   单元测试共享夹具
-├── main.rs             bin 入口（库之上的薄 CLI）
-├── cli.rs              clap 命令树（命令、flags，不设别名）
-└── commands/           CLI 渲染层（仅参数拆解 + 输出）
+├── lib.rs              Library root: Manager facade + request/result types + private core module
+├── manager.rs          High-level Manager facade (add/list/remove/update/disable/enable/link)
+├── error.rs            Unified error type and Result alias
+├── core/               Domain logic (pure functions, injectable dependencies)
+│   ├── mod.rs          Module organization and re-exports
+│   ├── source.rs       Source-string parsing
+│   ├── agents.rs       Agent → skills-directory mapping table
+│   ├── discover.rs     SKILL.md discovery + frontmatter parsing
+│   ├── fetch.rs        git clone / HTTP download / archive unpacking
+│   ├── github.rs       GitHub API single-skill fast path
+│   ├── install.rs      Install skills into the canonical directory + installed-skills listing
+│   ├── link.rs         Directory-level agent linking (link/unlink/migrate)
+│   ├── lock.rs         skills-lock.json read/write + content hashing
+│   └── test_utils.rs   Shared unit-test fixtures
+├── main.rs             bin entry point (thin CLI on top of the library)
+├── cli.rs              clap command tree (commands, flags — no aliases)
+└── commands/           CLI rendering layer (argument splitting + output only)
     ├── mod.rs
     ├── add.rs
     ├── remove.rs
@@ -48,12 +56,12 @@ src/
     └── agent.rs
 
 examples/
-├── add_skill.rs        通过 Manager 门面安装技能（真实用法）
-└── manage.rs           在临时目录上演示 add → list → remove 生命周期
+├── add_skill.rs        Install a skill via the Manager facade (real usage)
+└── manage.rs           Demonstrates the add → list → remove lifecycle on a temp directory
 
 tests/
-├── common/mod.rs       集成测试共享夹具
-├── lib_api.rs          库 API 集成测试
+├── common/mod.rs       Shared integration-test fixtures
+├── lib_api.rs          Library API integration tests
 ├── cli_add.rs
 ├── cli_remove.rs
 ├── cli_list.rs
@@ -62,41 +70,44 @@ tests/
 └── cli_version.rs
 ```
 
-## 开发
+## Development
 
 ```bash
-cargo build            # 构建
-cargo test             # 运行全部测试
+cargo build            # build
+cargo test             # run all tests
 cargo clippy           # lint
-cargo fmt              # 格式化
+cargo fmt              # format
 ```
 
-## 测试
+## Testing
 
-测试遵循测试金字塔：
+Tests follow the test pyramid:
 
-- **单元测试** —— 通过 `#[cfg(test)]` 内联在 `src/` 各模块中，快速、隔离；
-  领域层夹具见 `src/core/test_utils.rs`。
-- **集成测试** —— `tests/` 中的黑盒测试通过 `assert_cmd` 驱动真实 CLI；
-  `lib_api.rs` 覆盖库 API。
+- **Unit tests** — inline in the `src/` modules via `#[cfg(test)]`, fast and
+  isolated; domain-layer fixtures live in `src/core/test_utils.rs`.
+- **Integration tests** — black-box tests in `tests/` that drive the real CLI
+  via `assert_cmd`; `lib_api.rs` covers the library API.
 
-示例程序作为补充：
+Example programs complement the tests:
 
 ```bash
-cargo run --example manage      # 在临时目录上演示 add → list → remove（无副作用）
-cargo run --example add_skill   # 通过 Manager 安装到你的真实环境
+cargo run --example manage      # demonstrates add → list → remove on a temp directory (no side effects)
+cargo run --example add_skill   # installs into your real environment via the Manager
 ```
 
-## 设计取舍
+## Design trade-offs
 
-- **极简稳定** —— 刻意保持小而稳定，注重跨平台（macOS、Linux、Windows）。
-- **纯数据** —— 库从不打印、从不调用 `process::exit`；结果结构化，错误通过
-  `Result` 上抛。
-- **无遥测** —— 不会有任何数据离开用户的机器。
+- **Minimal and stable** — deliberately kept small and stable, with
+  cross-platform care (macOS, Linux, Windows).
+- **Pure data** — the library never prints, never calls `process::exit`;
+  results are structured and errors surface through `Result`.
+- **No telemetry** — no data ever leaves the user's machine.
 
-## 发布
+## Releasing
 
-新版本一律通过 GitHub Actions 发布到 crates.io（见 `.github/workflows/`），
-不要在本地手动 `cargo publish`。发布前确认 `Cargo.toml` 的 `version` 已按
-语义化版本递增，并更新 [README](../README.md) / [CLI.md](CLI.md) /
-[LIBRARY.md](LIBRARY.md) 中涉及的版本号与接口变更。
+Releases to crates.io always go through GitHub Actions (see
+`.github/workflows/`) — never run `cargo publish` manually. Before releasing,
+make sure the `version` in `Cargo.toml` has been bumped according to semantic
+versioning, update the version numbers and API changes described in the
+[README](../README.md) / [CLI.md](CLI.md) / [LIBRARY.md](LIBRARY.md), and keep
+the Chinese translations under [docs/zh-CN/](zh-CN/) in sync.

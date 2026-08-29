@@ -1,28 +1,33 @@
-# agents-skills 库使用文档
+# agents-skills Library Guide
 
-面向**库使用者**：把技能管理能力嵌入自有 Rust 工具。CLI 用法见 [README](../README.md)，命令行参考见 [CLI.md](CLI.md)。
+English | [简体中文](zh-CN/LIBRARY.md)
 
-## 依赖引入
+For **library users**: embed the skill-management capabilities into your own
+Rust tooling. For CLI usage see the [README](../README.md), for the command
+reference see [CLI.md](CLI.md).
+
+## Adding the dependency
 
 ```toml
 [dependencies]
 agents-skills = "0.6"
 ```
 
-## 快速开始
+## Quick start
 
 ```rust
 use agents_skills::{AddRequest, AgentRequest, Manager};
 
 fn main() -> agents_skills::Result<()> {
-    let manager = Manager::builder().build(); // 等价于 Manager::new()
+    let manager = Manager::builder().build(); // equivalent to Manager::new()
 
-    manager.agent(&AgentRequest::default())?;        // 链接所有已安装 agent
-    let outcome = manager.add(&AddRequest::new("anthropics/skills"))?; // 安装技能包
+    manager.agent(&AgentRequest::default())?;        // link all installed agents
+    let outcome = manager.add(&AddRequest::new("anthropics/skills"))?; // install a skill pack
     println!("installed {} skill(s)", outcome.installed.len());
 
-    // agent_status 列出每个 agent 的链接状态；未链接且自带内容的 agent
-    // 会分类暴露私有的技能与其他文件，以及待恢复的备份槽。
+    // agent_status lists each agent's link status; unlinked agents that carry
+    // their own content expose their private skills and other files, plus any
+    // backup slot waiting to be restored.
     for s in manager.agent_status(false) {
         println!("{}: linked={}", s.name, s.linked);
         if !s.internal_skills.is_empty() {
@@ -39,87 +44,95 @@ fn main() -> agents_skills::Result<()> {
 }
 ```
 
-## 高层 API：[`Manager`]
+## High-level API: [`Manager`]
 
-每个方法接收一个纯数据请求结构体，返回结构化结果；请求结构体均为
-`Default + Clone`，可用字段覆盖构建。
+Every method takes a pure-data request struct and returns a structured result;
+all request structs are `Default + Clone` and can be built with field
+overrides.
 
-| 方法                      | 请求               | 返回                                   |
-| ------------------------- | ------------------ | -------------------------------------- |
-| [`Manager::add`]          | [`AddRequest`]     | [`AddOutcome`]（已安装 + 链接 + 失败） |
-| [`Manager::agent`]        | [`AgentRequest`]   | [`AgentOutcome`]（逐 agent 结果）      |
-| [`Manager::agent_status`] | `bool`（global）   | `Vec<`[`AgentStatus`]`>`               |
-| [`Manager::list`]         | [`ListRequest`]    | `Vec<`[`ListedSkill`]`>`（可序列化）   |
-| [`Manager::remove`]       | [`RemoveRequest`]  | [`RemoveOutcome`]（已移除名称）        |
-| [`Manager::update`]       | [`UpdateRequest`]  | [`UpdateOutcome`]（更新/失败计数）     |
-| [`Manager::disable`]      | [`DisableRequest`] | [`DisableOutcome`]（已禁用名称）       |
-| [`Manager::enable`]       | [`EnableRequest`]  | [`EnableOutcome`]（已启用名称）        |
+| Method                    | Request            | Returns                                       |
+| ------------------------- | ------------------ | --------------------------------------------- |
+| [`Manager::add`]          | [`AddRequest`]     | [`AddOutcome`] (installed + linked + failed)  |
+| [`Manager::agent`]        | [`AgentRequest`]   | [`AgentOutcome`] (per-agent results)          |
+| [`Manager::agent_status`] | `bool` (global)    | `Vec<`[`AgentStatus`]`>`                      |
+| [`Manager::list`]         | [`ListRequest`]    | `Vec<`[`ListedSkill`]`>` (serializable)       |
+| [`Manager::remove`]       | [`RemoveRequest`]  | [`RemoveOutcome`] (removed names)             |
+| [`Manager::update`]       | [`UpdateRequest`]  | [`UpdateOutcome`] (updated/failed counts)     |
+| [`Manager::disable`]      | [`DisableRequest`] | [`DisableOutcome`] (disabled names)           |
+| [`Manager::enable`]       | [`EnableRequest`]  | [`EnableOutcome`] (enabled names)             |
 
-### 请求结构体字段
+### Request-struct fields
 
-| 结构体             | 字段（除 `global: bool` 外）                                                                                |
+| Struct             | Fields (besides `global: bool`)                                                                             |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| [`AddRequest`]     | `source: String`、`skills: Vec<String>`（`"*"` 或具体名，空 = 全部）、`list_only: bool`                     |
-| [`AgentRequest`]   | `agents: Vec<String>`、`unlink: bool`、`migrate: bool`                                                      |
-| [`ListRequest`]    | `agents: Vec<String>`（空 = 全部 agent）                                                                    |
-| [`RemoveRequest`]  | `skills: Vec<String>`、`all: bool`                                                                          |
-| [`UpdateRequest`]  | `skills: Vec<String>`、`scope: Scope`                                                                       |
-| [`DisableRequest`] | `skills: Vec<String>`、`all: bool`                                                                          |
-| [`EnableRequest`]  | `skills: Vec<String>`、`all: bool`                                                                          |
+| [`AddRequest`]     | `source: String`, `skills: Vec<String>` (`"*"` or specific names, empty = all), `list_only: bool`           |
+| [`AgentRequest`]   | `agents: Vec<String>`, `unlink: bool`, `migrate: bool`                                                      |
+| [`ListRequest`]    | `agents: Vec<String>` (empty = all agents)                                                                  |
+| [`RemoveRequest`]  | `skills: Vec<String>`, `all: bool`                                                                          |
+| [`UpdateRequest`]  | `skills: Vec<String>`, `scope: Scope`                                                                       |
+| [`DisableRequest`] | `skills: Vec<String>`, `all: bool`                                                                          |
+| [`EnableRequest`]  | `skills: Vec<String>`, `all: bool`                                                                          |
 
-所有请求结构体带 `global: bool` 字段：`true` 操作全局 `~/.agents/skills`（CLI 默认），
-`false` 操作项目级 `./.agents/skills`（对应 CLI 的 `--project`）。项目根取自
-`Env.cwd`（可用 `Manager::builder().cwd()` 覆盖，对应 CLI 的 `--project <目录>`）。
-`AgentRequest` 与 `ListRequest` 的 `agents` 字段用于限定 agent（`"*"` 或具体名，
-空 = 自动探测）。
+All request structs carry a `global: bool` field: `true` operates on the
+global `~/.agents/skills` (the CLI default), `false` on the project-level
+`./.agents/skills` (the CLI's `--project`). The project root comes from
+`Env.cwd` (overridable via `Manager::builder().cwd()`, corresponding to the
+CLI's `--project <dir>`). The `agents` field of `AgentRequest` and
+`ListRequest` restricts the agents (`"*"` or specific names, empty =
+auto-detect).
 
-[`UpdateRequest`] 的 `scope` 用于覆盖自动作用域判定，取值
-[`Scope::Auto`]（默认，项目有技能/锁文件则项目级，否则全局）、[`Scope::Global`]、
-[`Scope::Project`]。
+The `scope` of [`UpdateRequest`] overrides automatic scope detection:
+[`Scope::Auto`] (default — project scope if the project has skills/a lockfile,
+otherwise global), [`Scope::Global`], [`Scope::Project`].
 
-### 与 CLI 的对应约定
+### Correspondence with the CLI
 
-- **`add` 单 source**：CLI 的 `add <source...>` 可一次装多个源，库的
-  [`AddRequest`] 只接受单个 `source: String`。要装多个源请多次调用
-  `manager.add(...)`，每次返回独立的 [`AddOutcome`]。
-- **`AgentRequest` 的 link 约定**：CLI 的 `agent` 命令 `--link`/`--unlink`/`--status`
-  三选一互斥；库把 `--status` 拆为独立的 [`Manager::agent_status`]，因此
-  [`AgentRequest`] 只需区分 link 与 unlink：`unlink: false`（默认）即 link，
-  `unlink: true` 即 unlink，`migrate: true` 仅在 link 时生效（对应 CLI
-  `--link --migrate`）。链接从不销毁已有内容：非空技能目录整体移入备份槽
-  `.agents/backup-skills/<agent>/skills/`，unlink 时一次 rename 恢复；`migrate: true`
-  把其中的技能移入规范目录（同名时规范目录副本优先）。仅当 agent 目录是指向
-  别处的符号链接，或存在未恢复的旧备份时报 [`LinkOutcome::Refused`]。
+- **`add` takes a single source**: the CLI's `add <source...>` installs
+  several sources at once, while the library's [`AddRequest`] accepts a single
+  `source: String`. To install multiple sources, call `manager.add(...)`
+  several times; each call returns its own [`AddOutcome`].
+- **`AgentRequest` link conventions**: the CLI's `agent` command requires
+  exactly one of `--link`/`--unlink`/`--status`; the library splits `--status`
+  into the separate [`Manager::agent_status`], so [`AgentRequest`] only
+  distinguishes link from unlink: `unlink: false` (default) links,
+  `unlink: true` unlinks, and `migrate: true` only takes effect when linking
+  (the CLI's `--link --migrate`). Linking never destroys existing content: a
+  non-empty skills directory is moved wholesale into the backup slot
+  `.agents/backup-skills/<agent>/skills/` and restored with a single rename on
+  unlink; `migrate: true` moves the skills inside into the canonical directory
+  (the canonical copy wins on name conflicts). [`LinkOutcome::Refused`] is
+  returned only when the agent directory is a symlink pointing elsewhere, or
+  when an unrestored old backup exists.
 
-### 常见操作
+### Common operations
 
 ```rust
 use agents_skills::{AddRequest, DisableRequest, EnableRequest, ListRequest, RemoveRequest};
 
-// 安装指定技能 / 只列出不安装
+// Install specific skills / list without installing
 let outcome = manager.add(&AddRequest {
     source: "anthropics/skills".into(),
-    skills: vec!["pdf".into()],   // 省略则安装全部
-    list_only: false,             // true 则只列出可用技能
+    skills: vec!["pdf".into()],   // omitted = install all
+    list_only: false,             // true = only list available skills
     ..Default::default()
 })?;
 
-// 列出技能（global 字段选作用域；--json / -a agent 为 CLI 对应能力）
+// List skills (the global field picks the scope; --json / -a <agent> are the CLI counterparts)
 let skills = manager.list(&ListRequest::default())?;
-let json = serde_json::to_string_pretty(&skills)?; // CLI 的 list --json
+let json = serde_json::to_string_pretty(&skills)?; // the CLI's list --json
 
-// 移除技能
+// Remove skills
 manager.remove(&RemoveRequest { skills: vec!["pdf".into()], ..Default::default() })?;
 
-// 更新技能
+// Update skills
 let outcome = manager.update(&UpdateRequest::default())?;
 
-// 禁用 / 启用（把技能目录移出 / 移回规范目录）
+// Disable / enable (moves the skill directory out of / back into the canonical directory)
 manager.disable(&DisableRequest { skills: vec!["pdf".into()], ..Default::default() })?;
 manager.enable(&EnableRequest { skills: vec!["pdf".into()], ..Default::default() })?;
 ```
 
-## 上下文注入：[`ManagerBuilder`]
+## Context injection: [`ManagerBuilder`]
 
 ```rust
 let manager = Manager::builder()
@@ -130,21 +143,24 @@ let manager = Manager::builder()
     .build();
 ```
 
-用于沙箱/测试，避免触碰真实环境；`Manager::new()` 等价于 `Manager::builder().build()`。
-沙箱中再加 `.probe_system_dirs(false)` 可让 agent 探测完全不读取系统位置
-（如 `/Applications/ZCode.app`），保证结果封闭可复现。
+Use it for sandboxes/tests to avoid touching the real environment;
+`Manager::new()` equals `Manager::builder().build()`. In a sandbox, adding
+`.probe_system_dirs(false)` makes agent probing skip system locations entirely
+(e.g. `/Applications/ZCode.app`), keeping results hermetic and reproducible.
 
-## 示例
+## Examples
 
 ```bash
-cargo run --example manage      # 在临时目录上演示 add → list → remove（无副作用）
-cargo run --example add_skill   # 通过 Manager 安装到真实环境
+cargo run --example manage      # demonstrates add → list → remove on a temp directory (no side effects)
+cargo run --example add_skill   # installs into the real environment via the Manager
 ```
 
-## 行为契约
+## Behavioral contract
 
-库保持**纯数据**：从不打印、从不调用 `process::exit`，结果结构化，错误通过 `Result`
-上抛；渲染与退出码由调用方决定。库**无遥测**——不会有任何数据离开你的机器。
+The library stays **pure data**: it never prints, never calls
+`process::exit`; results are structured and errors surface through `Result` —
+rendering and exit codes are the caller's job. The library has **no
+telemetry** — no data ever leaves your machine.
 
 [`Manager`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html
 [`Manager::add`]: https://docs.rs/agents-skills/latest/agents_skills/struct.Manager.html#method.add
