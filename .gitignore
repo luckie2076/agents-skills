@@ -1,4 +1,8 @@
 /target
-.codebuddy/
-.trae/
-.DS_Store
+
+# Ignore dotfiles by default (local tool state: .zcode/, .idea/, .DS_Store, ...);
+# re-include the few dot-entries that belong in the repo. Tracked files are
+# unaffected by ignore rules, so the negations only matter for future additions.
+.*
+!.gitignore
+!.github/
