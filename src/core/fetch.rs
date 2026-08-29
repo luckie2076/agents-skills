@@ -124,7 +124,7 @@ fn download_to_file(url: &str) -> Result<(tempfile::TempDir, PathBuf)> {
     Ok((tmp, file))
 }
 
-/// Download a URL and extract it (by archive type) into a temp dir, returning the extraction root.
+/// Download a URL and extract it into a temp dir, returning the extraction root.
 ///
 /// Supports zip / tar / tar.gz / tgz; single files (e.g. SKILL.md) are written as-is.
 pub fn download_and_extract(url: &str) -> Result<(tempfile::TempDir, PathBuf)> {
@@ -132,12 +132,15 @@ pub fn download_and_extract(url: &str) -> Result<(tempfile::TempDir, PathBuf)> {
     let out = tempfile::TempDir::new()?;
     let root = out.path().to_path_buf();
 
-    if is_archive(url, &file) {
-        extract_archive(&file, &root)?;
-    } else {
+    match detect_archive_kind(url, &file) {
+        Some(ArchiveKind::Zip) => extract_zip(&file, &root)?,
+        Some(ArchiveKind::TarGz) => extract_tar(&file, &root, true)?,
+        Some(ArchiveKind::Tar) => extract_tar(&file, &root, false)?,
         // Single file: copy under root, preserving the original filename.
-        let name = file_name_from_url(url);
-        std::fs::copy(&file, root.join(name))?;
+        None => {
+            let name = file_name_from_url(url);
+            std::fs::copy(&file, root.join(name))?;
+        }
     }
     Ok((out, root))
 }
@@ -152,33 +155,36 @@ fn file_name_from_url(url: &str) -> String {
     }
 }
 
-fn is_archive(url: &str, file: &Path) -> bool {
-    let lower = url.to_lowercase();
-    if lower.contains(".zip") || lower.contains(".tar.gz") || lower.contains(".tgz") {
-        return true;
-    }
-    if lower.contains(".tar") {
-        return true;
-    }
-    // Fallback: sniff the zip magic bytes from content.
-    if let Ok(bytes) = std::fs::read(file)
-        && bytes.len() >= 2
-        && bytes[0] == b'P'
-        && bytes[1] == b'K'
-    {
-        return true;
-    }
-    false
+/// Archive format of a downloaded file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArchiveKind {
+    /// ZIP archive.
+    Zip,
+    /// Uncompressed tar.
+    Tar,
+    /// Gzip-compressed tar.
+    TarGz,
 }
 
-/// Extract an archive into the destination, rejecting `..` path traversal.
-fn extract_archive(file: &Path, dest: &Path) -> Result<()> {
-    let lower = file.to_string_lossy().to_lowercase();
-    if lower.ends_with(".zip") || has_zip_magic(file) {
-        extract_zip(file, dest)
-    } else {
-        extract_tar(file, dest)
+/// Decide what a downloaded file is: an archive (and which kind) or a single file.
+///
+/// ZIP is detected by magic bytes first (codeload serves zip regardless of URL);
+/// otherwise the URL extension decides. `None` = single file, copied as-is.
+fn detect_archive_kind(url: &str, file: &Path) -> Option<ArchiveKind> {
+    if has_zip_magic(file) {
+        return Some(ArchiveKind::Zip);
     }
+    let path = url.split('?').next().unwrap_or(url).to_lowercase();
+    if path.ends_with(".zip") {
+        return Some(ArchiveKind::Zip);
+    }
+    if path.ends_with(".tar.gz") || path.ends_with(".tgz") {
+        return Some(ArchiveKind::TarGz);
+    }
+    if path.ends_with(".tar") {
+        return Some(ArchiveKind::Tar);
+    }
+    None
 }
 
 fn has_zip_magic(file: &Path) -> bool {
@@ -187,6 +193,7 @@ fn has_zip_magic(file: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Extract a zip into the destination, rejecting `..` path traversal.
 fn extract_zip(file: &Path, dest: &Path) -> Result<()> {
     let f = std::fs::File::open(file)?;
     let mut archive = zip::ZipArchive::new(f)?;
@@ -209,18 +216,16 @@ fn extract_zip(file: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-fn extract_tar(file: &Path, dest: &Path) -> Result<()> {
+/// Extract a tar (optionally gzip-compressed) into the destination.
+fn extract_tar(file: &Path, dest: &Path, gz: bool) -> Result<()> {
     let f = std::fs::File::open(file)?;
-    let is_gz = file.to_string_lossy().to_lowercase().ends_with(".gz")
-        || file.to_string_lossy().to_lowercase().ends_with(".tgz");
-    if is_gz {
-        let decoder = flate2::read::GzDecoder::new(f);
-        let mut archive = tar::Archive::new(decoder);
-        unpack_tar(&mut archive, dest)?;
+    let reader: Box<dyn std::io::Read> = if gz {
+        Box::new(flate2::read::GzDecoder::new(f))
     } else {
-        let mut archive = tar::Archive::new(f);
-        unpack_tar(&mut archive, dest)?;
-    }
+        Box::new(f)
+    };
+    let mut archive = tar::Archive::new(reader);
+    unpack_tar(&mut archive, dest)?;
     Ok(())
 }
 
@@ -377,7 +382,33 @@ mod tests {
             tw.finish().unwrap();
         }
 
-        extract_tar(&tar_path, &out).unwrap();
+        extract_tar(&tar_path, &out, true).unwrap();
+        assert!(out.join("skill/SKILL.md").exists());
+    }
+
+    #[test]
+    fn extract_plain_tar_with_nested_dirs() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let tar_path = tmp.path().join("skill.tar");
+        let out = tmp.path().join("out");
+
+        {
+            let f = std::fs::File::create(&tar_path).unwrap();
+            let mut tw = tar::Builder::new(f);
+            let mut header = tar::Header::new_gnu();
+            header.set_size(20);
+            header.set_mode(0o644);
+            header.set_cksum();
+            tw.append_data(
+                &mut header,
+                "skill/SKILL.md",
+                b"---\nname: pdf\n---\n".as_slice(),
+            )
+            .unwrap();
+            tw.finish().unwrap();
+        }
+
+        extract_tar(&tar_path, &out, false).unwrap();
         assert!(out.join("skill/SKILL.md").exists());
     }
 
