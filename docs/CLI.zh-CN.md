@@ -1,8 +1,8 @@
 # agents-skills 命令行参考
 
-简体中文 | [English](../CLI.md)
+简体中文 | [English](CLI.md)
 
-`agents-skills` CLI 的完整命令参考。功能概览见 [README](README.md)，库使用者见 [LIBRARY.md](LIBRARY.md)。
+`agents-skills` CLI 的完整命令参考。功能概览见 [README](../README.zh-CN.md)，库使用者见 [LIBRARY.zh-CN.md](LIBRARY.zh-CN.md)。
 
 ## 安装
 
@@ -177,5 +177,5 @@ agents-skills agent --unlink claude-code         # 解除指定 agent 链接并�
 
 ## 相关概念
 
-- 来源格式与安装位置见 [README · 功能说明](README.md#功能说明)。
-- 库接口（每个命令对应的 `Manager` 方法与请求/结果类型）见 [LIBRARY.md](LIBRARY.md)。
+- 来源格式与安装位置见 [README · 功能说明](../README.zh-CN.md#功能说明)。
+- 库接口（每个命令对应的 `Manager` 方法与请求/结果类型）见 [LIBRARY.zh-CN.md](LIBRARY.zh-CN.md)。

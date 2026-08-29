@@ -1,6 +1,6 @@
 # agents-skills Developer Guide
 
-English | [简体中文](zh-CN/DEVELOPER.md)
+English | [简体中文](DEVELOPER.zh-CN.md)
 
 For **project developers**: project layout, development workflow, testing, and
 releasing. For a feature overview and CLI usage see the
@@ -110,4 +110,5 @@ Releases to crates.io always go through GitHub Actions (see
 make sure the `version` in `Cargo.toml` has been bumped according to semantic
 versioning, update the version numbers and API changes described in the
 [README](../README.md) / [CLI.md](CLI.md) / [LIBRARY.md](LIBRARY.md), and keep
-the Chinese translations under [docs/zh-CN/](zh-CN/) in sync.
+the Chinese translations (the `*.zh-CN.md` files alongside each document) in
+sync.

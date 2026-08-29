@@ -1,6 +1,6 @@
 # agents-skills CLI Reference
 
-English | [简体中文](zh-CN/CLI.md)
+English | [简体中文](CLI.zh-CN.md)
 
 Complete command reference for the `agents-skills` CLI. For a feature overview
 see the [README](../README.md); library users see [LIBRARY.md](LIBRARY.md).

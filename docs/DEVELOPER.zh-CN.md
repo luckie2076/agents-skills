@@ -1,10 +1,10 @@
 # agents-skills 开发者文档
 
-简体中文 | [English](../DEVELOPER.md)
+简体中文 | [English](DEVELOPER.md)
 
 面向**本项目开发者**：项目结构、开发流程、测试与发布。功能概览与 CLI 用法见
-[README](README.md)，命令行参考见 [CLI.md](CLI.md)，库使用者见
-[LIBRARY.md](LIBRARY.md)。
+[README](../README.zh-CN.md)，命令行参考见 [CLI.zh-CN.md](CLI.zh-CN.md)，库使用者见
+[LIBRARY.zh-CN.md](LIBRARY.zh-CN.md)。
 
 ## 架构分层
 
@@ -100,6 +100,6 @@ cargo run --example add_skill   # 通过 Manager 安装到你的真实环境
 
 新版本一律通过 GitHub Actions 发布到 crates.io（见 `.github/workflows/`），
 不要在本地手动 `cargo publish`。发布前确认 `Cargo.toml` 的 `version` 已按
-语义化版本递增，并更新 [README](README.md) / [CLI.md](CLI.md) /
-[LIBRARY.md](LIBRARY.md) 中涉及的版本号与接口变更，同时同步更新
-[docs/zh-CN/](./) 下的中文翻译。
+语义化版本递增，并更新 [README](../README.zh-CN.md) / [CLI.zh-CN.md](CLI.zh-CN.md) /
+[LIBRARY.zh-CN.md](LIBRARY.zh-CN.md) 中涉及的版本号与接口变更，同时同步更新各文档
+对应的 `*.zh-CN.md` 中文翻译。

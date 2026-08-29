@@ -5,7 +5,7 @@
 [![CI](https://github.com/skill-one/agents-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/skill-one/agents-skills/actions)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-简体中文 | [English](../../README.md)
+简体中文 | [English](README.md)
 
 一个极简的 AI Agent 技能安装与管理工具：所有技能集中存放在一个**规范目录**，
 通过一次 `agent --link` 即可让 [Claude Code](https://claude.com/code)、Codex、Cursor 等
@@ -15,7 +15,7 @@
 cargo install agents-skills
 ```
 
-同时提供可嵌入的 Rust 库，见 [docs/LIBRARY.md](LIBRARY.md)。
+同时提供可嵌入的 Rust 库，见 [docs/LIBRARY.zh-CN.md](docs/LIBRARY.zh-CN.md)。
 
 ## 快速开始
 
@@ -95,15 +95,15 @@ agents-skills enable pdf                           # 重新启用（disable 的�
 
 命令不设别名（极简接口，只认全名）。
 
-> 完整命令行参考见 [docs/CLI.md](CLI.md)；库使用者见
-> [docs/LIBRARY.md](LIBRARY.md)；项目开发者见
-> [docs/DEVELOPER.md](DEVELOPER.md)。
+> 完整命令行参考见 [docs/CLI.zh-CN.md](docs/CLI.zh-CN.md)；库使用者见
+> [docs/LIBRARY.zh-CN.md](docs/LIBRARY.zh-CN.md)；项目开发者见
+> [docs/DEVELOPER.zh-CN.md](docs/DEVELOPER.zh-CN.md)。
 
 ## License
 
 在以下任一许可证下授权：
 
-- Apache License, Version 2.0（[LICENSE-APACHE](../../LICENSE-APACHE)）
-- MIT license（[LICENSE-MIT](../../LICENSE-MIT)）
+- Apache License, Version 2.0（[LICENSE-APACHE](LICENSE-APACHE)）
+- MIT license（[LICENSE-MIT](LICENSE-MIT)）
 
 由你选择。

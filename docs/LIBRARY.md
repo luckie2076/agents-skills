@@ -1,6 +1,6 @@
 # agents-skills Library Guide
 
-English | [简体中文](zh-CN/LIBRARY.md)
+English | [简体中文](LIBRARY.zh-CN.md)
 
 For **library users**: embed the skill-management capabilities into your own
 Rust tooling. For CLI usage see the [README](../README.md), for the command

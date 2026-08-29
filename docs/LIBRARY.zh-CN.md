@@ -1,8 +1,8 @@
 # agents-skills 库使用文档
 
-简体中文 | [English](../LIBRARY.md)
+简体中文 | [English](LIBRARY.md)
 
-面向**库使用者**：把技能管理能力嵌入自有 Rust 工具。CLI 用法见 [README](README.md)，命令行参考见 [CLI.md](CLI.md)。
+面向**库使用者**：把技能管理能力嵌入自有 Rust 工具。CLI 用法见 [README](../README.zh-CN.md)，命令行参考见 [CLI.zh-CN.md](CLI.zh-CN.md)。
 
 ## 依赖引入
 

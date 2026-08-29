@@ -5,7 +5,7 @@
 [![CI](https://github.com/skill-one/agents-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/skill-one/agents-skills/actions)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-English | [简体中文](docs/zh-CN/README.md)
+English | [简体中文](README.zh-CN.md)
 
 A minimal installer and manager for AI agent skills: all skills live in one
 **canonical directory**, and a single `agent --link` makes them visible and
