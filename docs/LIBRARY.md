@@ -123,17 +123,6 @@ let manager = Manager::builder()
 沙箱中再加 `.probe_system_dirs(false)` 可让 agent 探测完全不读取系统位置
 （如 `/Applications/ZCode.app`），保证结果封闭可复现。
 
-## 底层：`core` 原语
-
-如需细粒度控制，底层纯函数位于 `agents_skills::core`（未在 crate 根重导出）：
-
-- **来源**：[`parse_source`]、[`owner_repo`]
-- **发现**：[`discover_skills`]、[`filter_skills`]、[`parse_skill_md`]
-- **安装**：[`install_skill`]、[`list_installed_skills`]、[`sanitize_name`]、[`move_skill`]、[`list_disabled_skills`]
-- **Agent**：[`get_agent`]、[`detect_installed_agents`]、[`Agent`]、[`Env`]、[`disabled_skills_dir`]
-- **链接**：[`link_agent`]、[`unlink_agent`]、[`is_agent_linked`]
-- **锁文件**：[`read_local_lock`]、[`write_local_lock`]、[`compute_folder_hash`]
-
 ## 示例
 
 ```bash
@@ -174,24 +163,3 @@ cargo run --example add_skill   # 通过 Manager 安装到真实环境
 [`Scope::Auto`]: https://docs.rs/agents-skills/latest/agents_skills/enum.Scope.html
 [`Scope::Global`]: https://docs.rs/agents-skills/latest/agents_skills/enum.Scope.html
 [`Scope::Project`]: https://docs.rs/agents-skills/latest/agents_skills/enum.Scope.html
-[`parse_source`]: https://docs.rs/agents-skills/latest/agents_skills/core/source/fn.parse_source.html
-[`owner_repo`]: https://docs.rs/agents-skills/latest/agents_skills/core/source/fn.owner_repo.html
-[`discover_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.discover_skills.html
-[`filter_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.filter_skills.html
-[`parse_skill_md`]: https://docs.rs/agents-skills/latest/agents_skills/core/discover/fn.parse_skill_md.html
-[`install_skill`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.install_skill.html
-[`list_installed_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.list_installed_skills.html
-[`sanitize_name`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.sanitize_name.html
-[`move_skill`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.move_skill.html
-[`list_disabled_skills`]: https://docs.rs/agents-skills/latest/agents_skills/core/install/fn.list_disabled_skills.html
-[`disabled_skills_dir`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.disabled_skills_dir.html
-[`get_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.get_agent.html
-[`detect_installed_agents`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/fn.detect_installed_agents.html
-[`Agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/struct.Agent.html
-[`Env`]: https://docs.rs/agents-skills/latest/agents_skills/core/agents/struct.Env.html
-[`link_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.link_agent.html
-[`unlink_agent`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.unlink_agent.html
-[`is_agent_linked`]: https://docs.rs/agents-skills/latest/agents_skills/core/link/fn.is_agent_linked.html
-[`read_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.read_local_lock.html
-[`write_local_lock`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.write_local_lock.html
-[`compute_folder_hash`]: https://docs.rs/agents-skills/latest/agents_skills/core/lock/fn.compute_folder_hash.html

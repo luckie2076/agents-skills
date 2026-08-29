@@ -21,7 +21,7 @@
 
 ```
 src/
-├── lib.rs              库根：Manager 门面 + 请求/结果类型 + core 模块
+├── lib.rs              库根：Manager 门面 + 请求/结果类型 + 私有 core 模块
 ├── manager.rs          高层 Manager 门面（add/list/remove/update/disable/enable/link）
 ├── error.rs            统一错误类型与 Result 别名
 ├── core/               领域逻辑（纯函数、依赖可注入）

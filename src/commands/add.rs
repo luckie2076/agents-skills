@@ -6,10 +6,8 @@ use std::collections::HashSet;
 
 use crate::cli::{AddArgs, BOLD, CYAN, DIM, GREEN, RED, RESET, YELLOW};
 use crate::commands::{fail_agents, shorten_path};
-use agents_skills::core::agents::Env;
-use agents_skills::core::source::{Source, SourceType};
 use agents_skills::error::Result;
-use agents_skills::{AddOutcome, AddRequest, Manager, SkillsError};
+use agents_skills::{AddOutcome, AddRequest, Env, Manager, SkillsError, Source, SourceType};
 
 pub fn run(manager: &Manager, args: AddArgs) -> Result<()> {
     for source in &args.source {

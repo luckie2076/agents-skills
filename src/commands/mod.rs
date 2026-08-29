@@ -14,9 +14,8 @@ pub mod update;
 use std::path::Path;
 
 use crate::cli::{DIM, GREEN, RED, RESET, YELLOW};
-use agents_skills::core::agents::Env;
 use agents_skills::error::Result;
-use agents_skills::{AgentLinkResult, LinkOutcome, SkillsError};
+use agents_skills::{AgentLinkResult, Env, LinkOutcome, SkillsError};
 
 /// Render an invalid-agents error to stdout and exit 1 (a CLI-only concern).
 pub fn fail_agents(e: SkillsError) -> Result<()> {
@@ -25,11 +24,7 @@ pub fn fail_agents(e: SkillsError) -> Result<()> {
             println!("{YELLOW}Invalid agents: {names}{RESET}");
             println!(
                 "{DIM}Valid agents: {}{RESET}",
-                agents_skills::core::agents::AGENTS
-                    .iter()
-                    .map(|a| a.name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                agents_skills::agent_names().join(", ")
             );
             std::process::exit(1);
         }
