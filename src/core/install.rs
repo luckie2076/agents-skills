@@ -163,9 +163,6 @@ pub fn install_skill(skill: &Skill, global: bool, env: &Env) -> InstallResult {
 pub struct InstalledSkill {
     /// Skill name.
     pub name: String,
-    /// Skill description.
-    #[allow(dead_code)]
-    pub description: String,
     /// Canonical directory path.
     pub canonical_path: PathBuf,
     /// `"project"` or `"global"`.
@@ -227,7 +224,6 @@ pub fn list_installed_skills(
         }
         out.push(InstalledSkill {
             name: skill.name,
-            description: skill.description,
             canonical_path: skill_dir,
             scope: scope.to_string(),
             agents,
@@ -289,7 +285,6 @@ pub fn list_disabled_skills(env: &Env, global: bool) -> Vec<InstalledSkill> {
         };
         out.push(InstalledSkill {
             name: skill.name,
-            description: skill.description,
             canonical_path: skill_dir,
             scope: scope.to_string(),
             agents: Vec::new(),

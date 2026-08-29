@@ -171,12 +171,7 @@ fn is_well_known_url(input: &str) -> bool {
 
 /// URL parsers auto-normalize `..` segments, so we must pre-check the raw input for traversal.
 fn reject_traversal(input: &str) -> Result<()> {
-    if input.split('/').any(|seg| seg == "..") {
-        return Err(SkillsError::msg(format!(
-            "Unsafe subpath: \"{input}\" contains path traversal segments. Subpaths must not contain \"..\" components."
-        )));
-    }
-    Ok(())
+    sanitize_subpath(input).map(|_| ())
 }
 
 fn parse_github_url(input: &str) -> Result<Option<Source>> {
