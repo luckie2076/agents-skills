@@ -158,12 +158,7 @@ impl Manager {
                     path.display()
                 )));
             }
-            skills = discover_skills(
-                path,
-                parsed.subpath.as_deref(),
-                req.full_depth,
-                include_internal,
-            )?;
+            skills = discover_skills(path, parsed.subpath.as_deref(), include_internal)?;
             _temp = None;
         } else {
             // `@skill` install: fetch only the matching subdir via the GitHub API
@@ -180,12 +175,7 @@ impl Manager {
                 Some(v) => v,
                 None => fetch_source(&parsed)?,
             };
-            skills = discover_skills(
-                &root,
-                parsed.subpath.as_deref(),
-                req.full_depth,
-                include_internal,
-            )?;
+            skills = discover_skills(&root, parsed.subpath.as_deref(), include_internal)?;
             _temp = Some(tmp);
         }
 
@@ -250,30 +240,6 @@ impl Manager {
         })
     }
 
-    /// Link agents' skills dirs to the canonical dir.
-    ///
-    /// Each target agent's own skills dir becomes a relative symlink pointing at the
-    /// canonical dir, so every skill installed there is immediately visible to that
-    /// agent. Universal agents (whose skills dir already is the canonical dir) are
-    /// reported as [`LinkOutcome::AlreadyLinked`]. Agents whose root dir does not
-    /// exist in this scope are reported as [`LinkOutcome::Skipped`] (except
-    /// `claude-code`, the historical exception).
-    ///
-    /// An agent dir that already holds content is refused; pass `migrate` to move its
-    /// skill subdirs into the canonical dir first. Skills whose name already exists in
-    /// the canonical dir are skipped (the canonical copy wins, reported via
-    /// [`LinkOutcome::Migrated`] `skipped`); non-skill entries abort the migration
-    /// without changes. Legacy per-skill symlinks pointing into the canonical dir are
-    /// taken over automatically.
-    ///
-    /// # Selection defaults
-    ///
-    /// - `agents` empty → auto-detect installed agents (plus the universal agents);
-    ///   a `"*"` entry → every known agent.
-    ///
-    /// # Errors
-    ///
-    /// [`SkillsError::InvalidAgents`] when `agents` names an unknown agent.
     /// Link or unlink agents' skills dirs relative to the canonical dir.
     ///
     /// Connects each agent's own skills dir to the canonical dir with a
@@ -286,9 +252,14 @@ impl Manager {
     /// When linking, an agent dir that already holds content is refused; pass
     /// `req.migrate` to move its skill subdirs into the canonical dir first.
     /// Skills whose name already exists in the canonical dir are skipped (the
-    /// canonical copy wins); non-skill entries abort the migration without
-    /// changes. Legacy per-skill symlinks pointing into the canonical dir are
-    /// taken over automatically.
+    /// canonical copy wins, reported via [`LinkOutcome::Migrated`] `skipped`);
+    /// non-skill entries abort the migration without changes. Legacy per-skill
+    /// symlinks pointing into the canonical dir are taken over automatically.
+    ///
+    /// Universal agents (whose skills dir already is the canonical dir) report
+    /// [`LinkOutcome::AlreadyLinked`]. Agents whose root dir does not exist in
+    /// this scope are reported as [`LinkOutcome::Skipped`] (except
+    /// `claude-code`, the historical exception).
     ///
     /// # Selection defaults
     ///
@@ -344,7 +315,7 @@ impl Manager {
                 let internal_skills = if linked || canonical {
                     Vec::new()
                 } else if let Some(dir) = agent_skills_dir(a, global, &self.env) {
-                    discover_skills(&dir, None, false, false)
+                    discover_skills(&dir, None, false)
                         .map(|skills| skills.into_iter().map(|s| s.name).collect())
                         .unwrap_or_default()
                 } else {
@@ -673,26 +644,31 @@ impl Manager {
         }
 
         // Remove from the canonical dir (visible to every linked agent at once).
+        let lock_path = lock_path(&self.env, global);
+        let mut lock = read_local_lock(&lock_path);
         let mut removed: Vec<String> = Vec::new();
         for name in &selected {
             let canonical = get_canonical_path(name, global, &self.env);
             let sanitized = sanitize_name(name);
             let _ = std::fs::remove_dir_all(&canonical);
             // Also remove any parked copy in the disabled dir.
-            let disabled = disabled_skills_dir(global, &self.env).join(&sanitized);
-            let _ = std::fs::remove_dir_all(&disabled);
+            let parked = disabled_skills_dir(global, &self.env).join(&sanitized);
+            let _ = std::fs::remove_dir_all(&parked);
 
             // Clean the lock.
-            let mut lock = read_local_lock(&lock_path(&self.env, global));
             lock.version = 1;
             lock.skills.remove(name);
             lock.skills.remove(&sanitized);
-            if let Some(parent) = lock_path(&self.env, global).parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = write_local_lock(&lock, &lock_path(&self.env, global));
 
             removed.push(name.clone());
+        }
+
+        // Flush the lock once for all removals.
+        if !removed.is_empty() {
+            if let Some(parent) = lock_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = write_local_lock(&lock, &lock_path);
         }
 
         Ok(RemoveOutcome {
@@ -792,8 +768,8 @@ impl Manager {
                     continue;
                 }
             };
-            let discovered = discover_skills(&fetched.1, parsed.subpath.as_deref(), true, true)
-                .unwrap_or_default();
+            let discovered =
+                discover_skills(&fetched.1, parsed.subpath.as_deref(), true).unwrap_or_default();
 
             for (name, entry) in items {
                 let target = find_skill(&discovered, name, entry.skill_path.as_deref());
@@ -807,10 +783,14 @@ impl Manager {
                 let r = install_skill(skill, global, &self.env);
                 if r.success {
                     outcome.updated += 1;
+                    outcome.updated_names.push(name.clone());
                 } else {
                     outcome.failed += 1;
+                    outcome.failures.push(format!(
+                        "{name}: {}",
+                        r.error.unwrap_or_else(|| "install failed".to_string())
+                    ));
                 }
-                outcome.updated_names.push(name.clone());
             }
         }
 
@@ -829,6 +809,7 @@ pub struct ManagerBuilder {
     config: Option<PathBuf>,
     cwd: Option<PathBuf>,
     vars: std::collections::HashMap<String, String>,
+    probe_system_dirs: Option<bool>,
 }
 
 impl ManagerBuilder {
@@ -867,6 +848,16 @@ impl ManagerBuilder {
         self
     }
 
+    /// Toggle probing of well-known system locations during agent detection.
+    ///
+    /// Some agents are detected via system locations outside home/config/cwd
+    /// (e.g. `/Applications/ZCode.app`). Pass `false` in tests and sandboxes so
+    /// detection never consults the real machine. Default: probe.
+    pub fn probe_system_dirs(mut self, probe: bool) -> Self {
+        self.probe_system_dirs = Some(probe);
+        self
+    }
+
     /// Build the [`Manager`], resolving defaults from the real environment.
     ///
     /// Unset fields fall back to the actual home/config/cwd of the process.
@@ -882,6 +873,9 @@ impl ManagerBuilder {
         );
         if !self.vars.is_empty() {
             env.set_vars(self.vars);
+        }
+        if let Some(probe) = self.probe_system_dirs {
+            env.set_probe_system_dirs(probe);
         }
         Manager { env }
     }
@@ -907,8 +901,6 @@ pub struct AddRequest {
     pub skills: Vec<String>,
     /// List available skills without installing anything.
     pub list_only: bool,
-    /// Recurse into nested skill directories beyond the default container depth.
-    pub full_depth: bool,
 }
 
 impl AddRequest {
@@ -1210,14 +1202,17 @@ fn resolve_target_agents(names: &[String], env: &Env) -> Result<Vec<&'static Age
     Ok(ensure_universal_agents(installed))
 }
 
-/// Resolve requested names against an available set, matching case-insensitively on
-/// sanitized names (the available dir name is returned).
-fn resolve_names(requested: &[String], available: &[String]) -> Vec<String> {
+/// Resolve requested names against available name sets, matching case-insensitively on
+/// sanitized names. `sources` are consulted in order and the first available original
+/// name wins — put higher-priority sources (e.g. lock keys) first.
+fn resolve_names(requested: &[String], sources: &[&[String]]) -> Vec<String> {
     let mut identity: HashMap<String, String> = HashMap::new();
-    for folder in available {
-        identity
-            .entry(sanitize_name(folder))
-            .or_insert_with(|| folder.clone());
+    for source in sources {
+        for folder in *source {
+            identity
+                .entry(sanitize_name(folder))
+                .or_insert_with(|| folder.clone());
+        }
     }
     let mut matched = HashSet::new();
     for name in requested {
@@ -1243,7 +1238,7 @@ fn set_enabled_state(
     to_enabled: bool,
     env: &Env,
 ) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
-    let selected = resolve_names(requested, from_set);
+    let selected = resolve_names(requested, &[from_set]);
 
     let mut already: Vec<String> = Vec::new();
     let mut missing: Vec<String> = Vec::new();
@@ -1329,29 +1324,7 @@ fn resolve_to_remove(
     disabled: &[String],
     lock_keys: &[String],
 ) -> Vec<String> {
-    let mut identity: HashMap<String, String> = HashMap::new();
-    for folder in installed {
-        identity
-            .entry(sanitize_name(folder))
-            .or_insert_with(|| folder.clone());
-    }
-    for folder in disabled {
-        identity
-            .entry(sanitize_name(folder))
-            .or_insert_with(|| folder.clone());
-    }
-    for key in lock_keys {
-        identity.insert(sanitize_name(key), key.clone());
-    }
-    let mut matched = HashSet::new();
-    for name in requested {
-        if let Some(hit) = identity.get(&sanitize_name(name)) {
-            matched.insert(hit.clone());
-        }
-    }
-    let mut v: Vec<String> = matched.into_iter().collect();
-    v.sort();
-    v
+    resolve_names(requested, &[lock_keys, installed, disabled])
 }
 
 fn lock_path(env: &Env, global: bool) -> PathBuf {

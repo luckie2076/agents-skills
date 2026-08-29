@@ -12,18 +12,20 @@ cargo install agents-skills
 
 ## 命令速查表
 
-| 命令     | 别名                | 说明                            |
-| -------- | ------------------- | ------------------------------- |
-| `add`    | `a`, `i`, `install` | 从来源安装技能包                |
-| `remove` | `rm`, `r`           | 移除已安装技能                  |
-| `list`   | `ls`                | 列出已安装技能                  |
-| `update` | `upgrade`, `check`  | 将技能更新到最新版本            |
-| `disable`| `d`                 | 禁用已安装技能                  |
-| `enable` | `e`                 | 重新启用已禁用的技能            |
-| `agent`  |                     | 链接/解除链接/查看 agent 状态   |
+| 命令     | 说明                            |
+| -------- | ------------------------------- |
+| `add`    | 从来源安装技能包                |
+| `remove` | 移除已安装技能                  |
+| `list`   | 列出已安装技能                  |
+| `update` | 将技能更新到最新版本            |
+| `disable`| 禁用已安装技能                  |
+| `enable` | 重新启用已禁用的技能            |
+| `agent`  | 链接/解除链接/查看 agent 状态   |
 
-通用说明：技能存放在规范目录（项目 `.agents/skills` 或全局 `~/.agents/skills`）；
-`-g/--global` 切换全局作用域，`-y/--yes` 跳过确认提示。
+命令不设别名（极简接口，只认全名）。
+
+通用说明：技能存放在规范目录（项目 `.agents/skills` 或全局 `~/.agents/skills`），
+`-g/--global` 切换全局作用域。
 
 ## add
 
@@ -38,8 +40,6 @@ agents-skills add <source...> [options]
 | `-g, --global`       | 全局安装（默认项目级）                    |
 | `-s, --skill <s>...` | 要安装的技能名（`'*'` 表示全部）          |
 | `-l, --list`         | 仅列出可用技能，不安装                    |
-| `-y, --yes`          | 跳过确认提示                              |
-| `--full-depth`       | 即使存在根 SKILL.md 也搜索所有子目录      |
 
 ```bash
 agents-skills add anthropics/skills       # 安装仓库全部技能
@@ -61,8 +61,7 @@ agents-skills remove [skills...] [options]
 | -------------------- | ------------------------------------- |
 | `-g, --global`       | 从全局作用域移除                      |
 | `-s, --skill <s>...` | 要移除的技能（`'*'` 表示全部）        |
-| `-y, --yes`          | 跳过确认提示                          |
-| `--all`              | `--skill '*' -y` 的简写               |
+| `--all`              | 移除全部技能（含已禁用的）            |
 
 ```bash
 agents-skills remove pdf      # 移除指定技能
@@ -101,7 +100,6 @@ agents-skills update [skills...] [options]
 | --------------- | -------------------------------------------------------- |
 | `-g, --global`  | 仅更新全局技能                                           |
 | `-p, --project` | 仅更新项目技能                                           |
-| `-y, --yes`     | 跳过作用域提示（项目内更新项目，否则更新全局）           |
 
 ```bash
 agents-skills update             # 更新全部（自动检测作用域）

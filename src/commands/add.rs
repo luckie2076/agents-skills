@@ -12,19 +12,25 @@ use agents_skills::error::Result;
 use agents_skills::{AddOutcome, AddRequest, Manager, SkillsError};
 
 pub fn run(manager: &Manager, args: AddArgs) -> Result<()> {
-    let req = AddRequest {
-        source: args.source[0].clone(),
-        global: args.global,
-        skills: args.skill.clone(),
-        list_only: args.list,
-        full_depth: args.full_depth,
-    };
+    for source in &args.source {
+        let req = AddRequest {
+            source: source.clone(),
+            global: args.global,
+            skills: args.skill.clone(),
+            list_only: args.list,
+        };
 
-    let outcome = match manager.add(&req) {
-        Ok(o) => o,
-        Err(e) => return fail_add(e),
-    };
-    render(manager.env(), &req, &outcome);
+        let outcome = match manager.add(&req) {
+            Ok(o) => o,
+            Err(e) => return fail_add(e),
+        };
+        render(manager.env(), &req, &outcome);
+    }
+
+    println!();
+    println!(
+        "{GREEN}Done!{RESET}{DIM}  Review skills before use; they run with full agent permissions.{RESET}"
+    );
     Ok(())
 }
 
@@ -121,9 +127,6 @@ fn render(env: &Env, req: &AddRequest, outcome: &AddOutcome) {
         }
     }
     println!();
-    println!(
-        "{GREEN}Done!{RESET}{DIM}  Review skills before use; they run with full agent permissions.{RESET}"
-    );
 }
 
 fn print_source(parsed: &Source) {

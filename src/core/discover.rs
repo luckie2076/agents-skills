@@ -1,8 +1,9 @@
 //! SKILL.md discovery and frontmatter parsing.
 //!
 //! Priority container dirs (repo root + `skills/` + `.curated/.experimental/.system` +
-//! each agent's project skills dir) recurse at most 3 levels, with shallow shadowing deep;
-//! `--full-depth` recurses the whole tree.
+//! each agent's project skills dir) recurse at most 3 levels, with shallow shadowing deep.
+//! A root `SKILL.md` short-circuits the whole source to a single skill; when the
+//! container walk finds nothing, full-tree recursion (max 5 levels) falls back.
 //! Not supported: installed-project-skill filtering and plugin manifests.
 
 use std::collections::HashSet;
@@ -20,6 +21,12 @@ pub const DEFAULT_SKILL_CONTAINER_DEPTH: usize = 3;
 const SKIP_DIRS: [&str; 5] = ["node_modules", ".git", "dist", "build", "__pycache__"];
 
 /// Each agent's project-level skills dir (one of the container dirs).
+///
+/// Kept by hand, intentionally independent of the agent table in `agents.rs`: this
+/// list is the set of container dirs searched when discovering skills inside a
+/// *source* repo, and it includes dirs that map to no registered agent (e.g.
+/// `.github/skills`, `.codex/skills`). When an agent gains its own project dir,
+/// decide whether discovery should cover it and update both lists.
 pub const AGENT_PROJECT_SKILL_DIRS: [&str; 27] = [
     ".agents/skills",
     ".claude/skills",
@@ -59,9 +66,6 @@ pub struct Skill {
     pub description: String,
     /// Directory containing SKILL.md.
     pub dir: PathBuf,
-    /// Full raw SKILL.md content (used by the use command to build the prompt).
-    #[allow(dead_code)]
-    pub raw_content: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,20 +78,14 @@ struct Frontmatter {
     metadata: Option<serde_yaml::Value>,
 }
 
-/// Split the `---`-delimited frontmatter, returning `(yaml data, body)`.
+/// Split the `---`-delimited frontmatter, returning the YAML data.
 /// Returns None when there is no frontmatter.
-fn split_frontmatter(raw: &str) -> Option<(&str, &str)> {
+fn split_frontmatter(raw: &str) -> Option<&str> {
     let rest = raw
         .strip_prefix("---\r\n")
         .or_else(|| raw.strip_prefix("---\n"))?;
     let end = rest.find("\n---")?;
-    let data = &rest[..end];
-    let after = &rest[end + 4..];
-    let content = after
-        .strip_prefix("\r\n")
-        .or_else(|| after.strip_prefix('\n'))
-        .unwrap_or(after);
-    Some((data, content))
+    Some(&rest[..end])
 }
 
 /// Parse a single SKILL.md; return None on any error (read failure / invalid YAML / missing fields).
@@ -99,7 +97,7 @@ pub fn parse_skill_md(skill_md: &Path) -> Option<Skill> {
 /// Like [`parse_skill_md`], but allows including internal skills when `include_internal` is true.
 pub fn parse_skill_md_inner(skill_md: &Path, include_internal: bool) -> Option<Skill> {
     let content = fs::read_to_string(skill_md).ok()?;
-    let (data, _body) = split_frontmatter(&content)?;
+    let data = split_frontmatter(&content)?;
     let fm: Frontmatter = serde_yaml::from_str(data).ok()?;
     let name = fm.name?;
     let description = fm.description?;
@@ -119,7 +117,6 @@ pub fn parse_skill_md_inner(skill_md: &Path, include_internal: bool) -> Option<S
         name,
         description,
         dir: skill_md.parent()?.to_path_buf(),
-        raw_content: content,
     })
 }
 
@@ -211,7 +208,7 @@ fn walk_skill_dirs(
     }
 }
 
-/// Full-tree recursion (fallback / --full-depth), max 5 levels, collecting SKILL.md dirs at each level.
+/// Full-tree recursion fallback, max 5 levels, collecting SKILL.md dirs at each level.
 fn find_all_skill_dirs(
     dir: &Path,
     depth: usize,
@@ -255,7 +252,6 @@ fn find_all_skill_dirs(
 pub fn discover_skills(
     base: &Path,
     subpath: Option<&str>,
-    full_depth: bool,
     include_internal: bool,
 ) -> Result<Vec<Skill>> {
     if let Some(sp) = subpath
@@ -269,16 +265,14 @@ pub fn discover_skills(
     let mut skills: Vec<Skill> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    // A root SKILL.md hit short-circuits (unless --full-depth).
+    // A root SKILL.md hit short-circuits: the whole source is one skill.
     if search_path.join("SKILL.md").is_file()
         && let Some(skill) = parse_skill_md_inner(&search_path.join("SKILL.md"), include_internal)
         && !seen.contains(&skill.name)
     {
         seen.insert(skill.name.clone());
         skills.push(skill);
-        if !full_depth {
-            return Ok(skills);
-        }
+        return Ok(skills);
     }
 
     // Priority container dirs: repo root depth=1, other containers depth=3.
@@ -303,8 +297,8 @@ pub fn discover_skills(
         walk_skill_dirs(dir, max_depth, 1, include_internal, &mut seen, &mut skills);
     }
 
-    // No results or --full-depth: full-tree recursion.
-    if skills.is_empty() || full_depth {
+    // Nothing in the priority containers: full-tree recursion fallback.
+    if skills.is_empty() {
         find_all_skill_dirs(&search_path, 0, 5, include_internal, &mut seen, &mut skills);
     }
     Ok(skills)
@@ -340,7 +334,7 @@ mod tests {
         let skill = parse_skill_md(&md).unwrap();
         assert_eq!(skill.name, "pdf");
         assert_eq!(skill.description, "does pdf");
-        assert!(skill.raw_content.contains("# pdf"));
+        assert_eq!(skill.dir, tmp.path().join("pdf"));
     }
 
     #[test]
@@ -400,7 +394,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         write_skill_md(tmp.path(), ".", "root");
         write_skill_md(tmp.path(), "skills/other", "other");
-        let skills = discover_skills(tmp.path(), None, false, false).unwrap();
+        let skills = discover_skills(tmp.path(), None, false).unwrap();
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].name, "root");
     }
@@ -412,7 +406,7 @@ mod tests {
         write_skill_md(tmp.path(), "skills/category/pdf", "pdf-nested");
         // 4th-level dir under skills/, beyond the default container depth (3 levels).
         write_skill_md(tmp.path(), "skills/category/sub/x/pdf", "pdf-deep");
-        let skills = discover_skills(tmp.path(), None, false, false).unwrap();
+        let skills = discover_skills(tmp.path(), None, false).unwrap();
         let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"pdf"));
         assert!(names.contains(&"pdf-nested"));
@@ -424,7 +418,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         write_skill_md(tmp.path(), "skills/pdf", "pdf");
         write_skill_md(tmp.path(), "skills/pdf/pdf", "pdf");
-        let skills = discover_skills(tmp.path(), None, false, false).unwrap();
+        let skills = discover_skills(tmp.path(), None, false).unwrap();
         assert_eq!(skills.iter().filter(|s| s.name == "pdf").count(), 1);
         assert_eq!(skills[0].dir, tmp.path().join("skills/pdf"));
     }
@@ -435,7 +429,7 @@ mod tests {
         write_skill_md(tmp.path(), "skills/pdf", "pdf");
         write_skill_md(tmp.path(), "node_modules/x", "x");
         write_skill_md(tmp.path(), "skills/.git/x", "git-x");
-        let skills = discover_skills(tmp.path(), None, false, false).unwrap();
+        let skills = discover_skills(tmp.path(), None, false).unwrap();
         let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"pdf"));
         assert!(!names.contains(&"x"));
@@ -443,21 +437,10 @@ mod tests {
     }
 
     #[test]
-    fn full_depth_finds_deep_skills() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        write_skill_md(tmp.path(), "skills/pdf", "pdf");
-        write_skill_md(tmp.path(), "skills/a/b/c/pdf", "pdf-deep");
-        let skills = discover_skills(tmp.path(), None, true, false).unwrap();
-        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"pdf"));
-        assert!(names.contains(&"pdf-deep"));
-    }
-
-    #[test]
     fn unsafe_subpath_is_rejected() {
         let tmp = tempfile::TempDir::new().unwrap();
         write_skill_md(tmp.path(), "pdf", "pdf");
-        assert!(discover_skills(tmp.path(), Some("../evil"), false, false).is_err());
+        assert!(discover_skills(tmp.path(), Some("../evil"), false).is_err());
     }
 
     #[test]
@@ -465,7 +448,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         write_skill_md(tmp.path(), "skills/pdf", "PDF Master");
         write_skill_md(tmp.path(), "skills/doc", "docx");
-        let skills = discover_skills(tmp.path(), None, false, false).unwrap();
+        let skills = discover_skills(tmp.path(), None, false).unwrap();
         let hit = filter_skills(&skills, &["pdf master".to_string()]);
         assert_eq!(hit.len(), 1);
         assert_eq!(hit[0].name, "PDF Master");

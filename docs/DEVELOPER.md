@@ -36,7 +36,7 @@ src/
 │   ├── lock.rs         skills-lock.json 读写 + 内容哈希
 │   └── test_utils.rs   单元测试共享夹具
 ├── main.rs             bin 入口（库之上的薄 CLI）
-├── cli.rs              clap 命令树（命令、别名、flags）
+├── cli.rs              clap 命令树（命令、flags，不设别名）
 └── commands/           CLI 渲染层（仅参数拆解 + 输出）
     ├── mod.rs
     ├── add.rs

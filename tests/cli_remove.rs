@@ -1,4 +1,4 @@
-//! End-to-end tests for the `remove` command: single removal, aliases, --all, no-args, nonexistent skill.
+//! End-to-end tests for the `remove` command: single removal, --all, no-args, nonexistent skill.
 
 mod common;
 
@@ -28,21 +28,6 @@ fn remove_deletes_installed_skill_and_lock_entry() {
         !p.read("skills-lock.json").contains("\"pdf\""),
         "lock should drop skill"
     );
-}
-
-#[test]
-fn remove_supports_alias_rm() {
-    let p = TestProject::new();
-    let src = p.write_skill_source("my-skill", "pdf");
-
-    p.skills()
-        .args(["add", src.to_str().unwrap()])
-        .assert()
-        .success();
-
-    p.skills().args(["rm", "pdf"]).assert().success();
-
-    p.assert_absent(".agents/skills/pdf");
 }
 
 #[test]

@@ -53,7 +53,7 @@ fn main() -> agents_skills::Result<()> {
 
 | 结构体             | 字段（除 `global: bool` 外）                                                                                |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| [`AddRequest`]     | `source: String`、`skills: Vec<String>`（`"*"` 或具体名，空 = 全部）、`list_only: bool`、`full_depth: bool` |
+| [`AddRequest`]     | `source: String`、`skills: Vec<String>`（`"*"` 或具体名，空 = 全部）、`list_only: bool`                     |
 | [`AgentRequest`]   | `agents: Vec<String>`、`unlink: bool`、`migrate: bool`                                                      |
 | [`ListRequest`]    | `agents: Vec<String>`（空 = 全部 agent）                                                                    |
 | [`RemoveRequest`]  | `skills: Vec<String>`、`all: bool`                                                                          |
@@ -120,6 +120,8 @@ let manager = Manager::builder()
 ```
 
 用于沙箱/测试，避免触碰真实环境；`Manager::new()` 等价于 `Manager::builder().build()`。
+沙箱中再加 `.probe_system_dirs(false)` 可让 agent 探测完全不读取系统位置
+（如 `/Applications/ZCode.app`），保证结果封闭可复现。
 
 ## 底层：`core` 原语
 

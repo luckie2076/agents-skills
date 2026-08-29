@@ -36,7 +36,7 @@ fn render(req: &RemoveRequest, outcome: &RemoveOutcome) {
             }
             println!();
             println!("{DIM}Usage: agents-skills remove <name> [options]{RESET}");
-            println!("{DIM}Options: -g/--global, -s/--skill, --all, -y/--yes{RESET}");
+            println!("{DIM}Options: -g/--global, -s/--skill, --all{RESET}");
         }
         return;
     }

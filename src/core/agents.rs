@@ -24,6 +24,10 @@ pub struct Env {
     pub cwd: PathBuf,
     /// Environment variables injectable in tests (reads the real env when None).
     vars: Option<HashMap<String, String>>,
+    /// Whether detection may probe well-known system locations outside
+    /// `home`/`config`/`cwd` (e.g. `/Applications/ZCode.app`). Tests and
+    /// sandboxes turn this off so detection stays hermetic.
+    probe_system_dirs: bool,
 }
 
 impl Env {
@@ -34,6 +38,7 @@ impl Env {
             config: config.as_ref().to_path_buf(),
             cwd: cwd.as_ref().to_path_buf(),
             vars: None,
+            probe_system_dirs: true,
         }
     }
 
@@ -48,6 +53,14 @@ impl Env {
     /// Inject environment variable overrides (for library users and tests).
     pub fn set_vars(&mut self, vars: HashMap<String, String>) {
         self.vars = Some(vars);
+    }
+
+    /// Toggle probing of well-known system locations outside `home`/`config`/`cwd`.
+    ///
+    /// Tests and sandboxes pass `false` so agent detection never consults the
+    /// real machine (e.g. `/Applications`), keeping results hermetic.
+    pub fn set_probe_system_dirs(&mut self, probe: bool) {
+        self.probe_system_dirs = probe;
     }
 }
 
@@ -344,7 +357,7 @@ pub const AGENTS: &[Agent] = &[
         GlobalDir::Home(".agents/skills"),
         Detect::Home(".dexto"),
     )
-    .mark(PrivateMark::Dexto),
+    .hide(),
     Agent::new(
         "droid",
         "Droid",
@@ -359,7 +372,7 @@ pub const AGENTS: &[Agent] = &[
         GlobalDir::Home(".firebender/skills"),
         Detect::Home(".firebender"),
     )
-    .mark(PrivateMark::Firebender),
+    .hide(),
     Agent::new(
         "forgecode",
         "ForgeCode",
@@ -479,7 +492,7 @@ pub const AGENTS: &[Agent] = &[
         GlobalDir::Home(".agents/skills"),
         Detect::Home(".loaf"),
     )
-    .mark(PrivateMark::Loaf),
+    .hide(),
     Agent::new(
         "mcpjam",
         "MCPJam",
@@ -578,7 +591,7 @@ pub const AGENTS: &[Agent] = &[
         GlobalDir::Config("agents/skills"),
         Detect::Cwd(".replit"),
     )
-    .mark(PrivateMark::Replit),
+    .hide(),
     Agent::new(
         "reasonix",
         "Reasonix",
@@ -705,24 +718,15 @@ pub const AGENTS: &[Agent] = &[
         GlobalDir::Config("agents/skills"),
         Detect::Special(SpecialKey::Universal),
     )
-    .mark(PrivateMark::Universal),
+    .hide(),
 ];
 
 impl Agent {
     /// Turn off show_in_universal_list (for a few special agents).
-    const fn mark(mut self, _: PrivateMark) -> Self {
+    const fn hide(mut self) -> Self {
         self.show_in_universal_list = false;
         self
     }
-}
-
-/// Private marker, used only to turn off show_in_universal_list.
-enum PrivateMark {
-    Dexto,
-    Firebender,
-    Loaf,
-    Replit,
-    Universal,
 }
 
 /// Look up an agent by name.
@@ -812,7 +816,8 @@ fn special_detect(k: SpecialKey, env: &Env) -> bool {
     match k {
         SpecialKey::Claude => env_home(EnvKey::Claude, env).exists(),
         SpecialKey::Codex => {
-            env_home(EnvKey::Codex, env).exists() || Path::new("/etc/codex").exists()
+            env_home(EnvKey::Codex, env).exists()
+                || (env.probe_system_dirs && Path::new("/etc/codex").exists())
         }
         SpecialKey::Openclaw => {
             env.home.join(".openclaw").exists()
@@ -820,11 +825,12 @@ fn special_detect(k: SpecialKey, env: &Env) -> bool {
                 || env.home.join(".moltbot").exists()
         }
         SpecialKey::Zcode => {
-            env.home.join(".zcode").exists() || Path::new("/Applications/ZCode.app").exists()
+            env.home.join(".zcode").exists()
+                || (env.probe_system_dirs && Path::new("/Applications/ZCode.app").exists())
         }
         SpecialKey::Minimax => {
             env.home.join(".minimax").exists()
-                || Path::new("/Applications/MiniMax Code.app").exists()
+                || (env.probe_system_dirs && Path::new("/Applications/MiniMax Code.app").exists())
         }
         SpecialKey::Astrbot => {
             env.cwd.join("data/skills").exists() || env.home.join(".astrbot").exists()

@@ -1,4 +1,4 @@
-//! End-to-end tests for the `list` command: project/global, JSON, aliases, invalid agent.
+//! End-to-end tests for the `list` command: project/global, JSON, invalid agent.
 
 mod common;
 
@@ -55,23 +55,6 @@ fn list_plain_prints_skill_and_source() {
         .stdout(predicate::str::contains("Project Skills"))
         .stdout(predicate::str::contains("pdf"))
         .stdout(predicate::str::contains("Source:"));
-}
-
-#[test]
-fn list_supports_alias_ls() {
-    let p = TestProject::new();
-    let src = p.write_skill_source("my-skill", "pdf");
-
-    p.skills()
-        .args(["add", src.to_str().unwrap()])
-        .assert()
-        .success();
-
-    p.skills()
-        .arg("ls")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("pdf"));
 }
 
 #[test]

@@ -1,7 +1,8 @@
 //! CLI command tree definition (clap derive).
 //!
-//! This is the externally exposed interface contract: 4 primary commands + aliases +
-//! all flags, centralized in this file for readability.
+//! This is the externally exposed interface contract: the subcommands +
+//! all flags, centralized in this file for readability. No subcommand
+//! aliases — the full names are short and unambiguous (cargo-style minimalism).
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
 
@@ -23,23 +24,17 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Add a skill package (aliases: a, i, install)
-    #[command(alias = "a", alias = "i", alias = "install")]
+    /// Add a skill package
     Add(AddArgs),
-    /// Remove installed skills (aliases: rm, r)
-    #[command(alias = "rm", alias = "r")]
+    /// Remove installed skills
     Remove(RemoveArgs),
-    /// List installed skills (alias: ls)
-    #[command(alias = "ls")]
+    /// List installed skills
     List(ListArgs),
-    /// Update skills to latest versions (aliases: upgrade, check)
-    #[command(alias = "upgrade", alias = "check")]
+    /// Update skills to latest versions
     Update(UpdateArgs),
-    /// Disable installed skills (alias: d)
-    #[command(alias = "d")]
+    /// Disable installed skills
     Disable(DisableArgs),
-    /// Enable previously disabled skills (alias: e)
-    #[command(alias = "e")]
+    /// Enable previously disabled skills
     Enable(EnableArgs),
     /// Manage agents' skills dirs link state (--link / --unlink / --status)
     Agent(AgentArgs),
@@ -59,12 +54,6 @@ pub struct AddArgs {
     /// List available skills in the repository without installing
     #[arg(short = 'l', long = "list")]
     pub list: bool,
-    /// Skip confirmation prompts
-    #[arg(short = 'y', long = "yes")]
-    pub yes: bool,
-    /// Search all subdirectories even when a root SKILL.md exists
-    #[arg(long = "full-depth")]
-    pub full_depth: bool,
 }
 
 #[derive(Debug, Args)]
@@ -77,10 +66,7 @@ pub struct RemoveArgs {
     /// Specify skills to remove (use '*' for all skills)
     #[arg(short = 's', long = "skill", num_args = 1..)]
     pub skill: Vec<String>,
-    /// Skip confirmation prompts
-    #[arg(short = 'y', long = "yes")]
-    pub yes: bool,
-    /// Shorthand for --skill '*' -y
+    /// Remove all installed skills
     #[arg(long = "all")]
     pub all: bool,
 }
@@ -108,9 +94,6 @@ pub struct UpdateArgs {
     /// Update project skills only
     #[arg(short = 'p', long = "project")]
     pub project: bool,
-    /// Skip scope prompt (auto-detect: project if in a project, else global)
-    #[arg(short = 'y', long = "yes")]
-    pub yes: bool,
 }
 
 #[derive(Debug, Args)]

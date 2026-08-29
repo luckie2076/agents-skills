@@ -224,6 +224,8 @@ fn lib_agent_status_orders_canonical_first() {
         .home(home.clone())
         .config(tmp.path().join("config"))
         .cwd(cwd.clone())
+        // Hermetic: never probe system locations (e.g. /Applications/ZCode.app).
+        .probe_system_dirs(false)
         .build();
 
     manager
@@ -449,4 +451,55 @@ fn lib_disable_global_scope_moves_home_skill() {
 
     assert!(!home.join(".agents/skills/pdf").exists());
     assert!(home.join(".agents/disabled-skills/pdf/SKILL.md").exists());
+}
+
+#[test]
+fn lib_update_reports_install_failures_without_updated_names() {
+    let tmp = tempfile::TempDir::new().unwrap();
+
+    // A real git repo so the lock records a non-local (git) source: `update` re-fetches it.
+    let repo_dir = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    let repo = git2::Repository::init(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("SKILL.md"),
+        "---\nname: pdf\ndescription: does pdf\n---\n\n# pdf\n",
+    )
+    .unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_path(Path::new("SKILL.md")).unwrap();
+    index.write().unwrap();
+    let tree_id = index.write_tree().unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    let sig = git2::Signature::now("test", "test@example.com").unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+        .unwrap();
+
+    let cwd = tmp.path().join("project");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let manager = Manager::builder()
+        .home(tmp.path().join("home"))
+        .config(tmp.path().join("config"))
+        .cwd(cwd.clone())
+        .build();
+    manager
+        .add(&AddRequest::new(format!("file://{}", repo_dir.display())))
+        .unwrap();
+
+    // Sabotage the canonical install: a file sits where the skill dir should be,
+    // so reinstalling fails inside install_skill (remove_dir_all on a file).
+    let canonical = cwd.join(".agents/skills/pdf");
+    std::fs::remove_dir_all(&canonical).unwrap();
+    std::fs::write(&canonical, "not a dir").unwrap();
+
+    let outcome = manager.update(&UpdateRequest::default()).unwrap();
+
+    assert_eq!(outcome.updated, 0);
+    assert_eq!(outcome.failed, 1);
+    assert!(
+        outcome.updated_names.is_empty(),
+        "failed skills must not be reported as updated"
+    );
+    assert_eq!(outcome.failures.len(), 1);
+    assert!(outcome.failures[0].starts_with("pdf:"));
 }

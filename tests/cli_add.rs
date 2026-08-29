@@ -1,10 +1,10 @@
-//! End-to-end tests for the `add` command: local install, aliases, global, --list, --full-depth.
+//! End-to-end tests for the `add` command: local install, global, --list.
 
 mod common;
 
 use predicates::prelude::*;
 
-use common::{TestProject, skill_md};
+use common::TestProject;
 
 #[test]
 fn add_local_path_installs_to_canonical() {
@@ -24,27 +24,22 @@ fn add_local_path_installs_to_canonical() {
 }
 
 #[test]
-fn add_supports_full_word_alias_install() {
+fn subcommand_aliases_are_rejected() {
     let p = TestProject::new();
     let src = p.write_skill_source("my-skill", "pdf");
 
-    // `install` is an alias of `add`.
-    p.skills().arg("install").arg(&src).assert().success();
+    // Deliberately alias-free: full command names only (minimal interface).
+    for alias in [
+        "a", "i", "install", "rm", "r", "ls", "d", "e", "upgrade", "check",
+    ] {
+        p.skills()
+            .args([alias, src.to_str().unwrap()])
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("Unknown command"));
+    }
 
-    p.assert_exists(".agents/skills/pdf/SKILL.md");
-}
-
-#[test]
-fn add_supports_short_alias_a() {
-    let p = TestProject::new();
-    let src = p.write_skill_source("my-skill", "pdf");
-
-    p.skills()
-        .args(["a", src.to_str().unwrap()])
-        .assert()
-        .success();
-
-    p.assert_exists(".agents/skills/pdf/SKILL.md");
+    p.assert_absent(".agents/skills/pdf");
 }
 
 #[test]
@@ -96,17 +91,30 @@ fn add_global_installs_to_home() {
 }
 
 #[test]
-fn add_full_depth_discovers_deep_skills() {
+fn full_depth_flag_is_rejected() {
     let p = TestProject::new();
-    let deep = p.path().join("skills/a/b/pdf");
-    std::fs::create_dir_all(&deep).unwrap();
-    std::fs::write(deep.join("SKILL.md"), skill_md("pdf-deep")).unwrap();
 
+    // Deliberately removed: discovery trusts its conventions, no full-tree override.
     p.skills()
-        .arg("add")
-        .arg(p.path())
-        .args(["--full-depth", "--list"])
+        .args(["add", p.path().to_str().unwrap(), "--full-depth"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unexpected argument"));
+}
+
+#[test]
+fn add_installs_every_source_argument() {
+    let p = TestProject::new();
+    let a = p.write_skill_source("src-a", "alpha");
+    let b = p.write_skill_source("src-b", "beta");
+
+    // Multiple <source...> args: every source is installed, none silently dropped.
+    p.skills()
+        .args(["add", a.to_str().unwrap(), b.to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("pdf-deep"));
+        .stdout(predicate::str::contains("Installed 1 skill"));
+
+    p.assert_exists(".agents/skills/alpha/SKILL.md");
+    p.assert_exists(".agents/skills/beta/SKILL.md");
 }

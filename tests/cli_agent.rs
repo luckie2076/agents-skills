@@ -244,7 +244,7 @@ fn remove_skill_disappears_from_linked_agents() {
         .assert()
         .success();
 
-    p.skills().args(["remove", "pdf", "-y"]).assert().success();
+    p.skills().args(["remove", "pdf"]).assert().success();
 
     p.assert_absent(".agents/skills/pdf");
     // The dir link remains, but the skill is gone (no dead per-skill links).

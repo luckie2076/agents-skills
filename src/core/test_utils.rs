@@ -9,8 +9,14 @@ use crate::core::agents::Env;
 use crate::core::discover::{Skill, parse_skill_md};
 
 /// Construct an `Env` in a temp dir: home=cwd=tmp, config=tmp/config.
+///
+/// Hermetic by construction: system-location probes are off and injected env
+/// vars are empty, so detection never consults the real machine or process env.
 pub fn env_at(tmp: &tempfile::TempDir) -> Env {
-    Env::new(tmp.path(), tmp.path().join("config"), tmp.path())
+    let mut env = Env::new(tmp.path(), tmp.path().join("config"), tmp.path());
+    env.set_probe_system_dirs(false);
+    env.set_vars(std::collections::HashMap::new());
+    env
 }
 
 /// Generate a standard `SKILL.md` dir under `root/rel_dir`, returning the SKILL.md path.
