@@ -114,11 +114,10 @@ fn render_parked(skills: &[String], others: &[String], dir: Option<&Path>, env: 
     );
 }
 
-/// Shorten a path for display: `~` for home, `.` for cwd prefixes.
+/// Shorten a path for display: `~` for home, `.` for the process cwd prefix.
 pub fn shorten_path(path: &Path, env: &Env) -> String {
     let full = path.to_string_lossy();
     let home_s = env.home.to_string_lossy();
-    let cwd_s = env.cwd.to_string_lossy();
     if full == home_s {
         return "~".to_string();
     }
@@ -127,13 +126,18 @@ pub fn shorten_path(path: &Path, env: &Env) -> String {
     {
         return format!("~{rest}");
     }
-    if full == cwd_s {
-        return ".".to_string();
-    }
-    if let Some(rest) = full.strip_prefix(&*cwd_s)
-        && (rest.starts_with('/') || rest.starts_with('\\'))
-    {
-        return format!(".{rest}");
+    // Compare against the process cwd, not `env.cwd`: with `--project <dir>` the
+    // manager targets another directory, and `./`-prefixing it would mislead.
+    if let Ok(cwd) = std::env::current_dir() {
+        let cwd_s = cwd.to_string_lossy();
+        if full == cwd_s {
+            return ".".to_string();
+        }
+        if let Some(rest) = full.strip_prefix(&*cwd_s)
+            && (rest.starts_with('/') || rest.starts_with('\\'))
+        {
+            return format!(".{rest}");
+        }
     }
     full.to_string()
 }

@@ -1,4 +1,4 @@
-//! End-to-end tests for the `list` command: project/global, JSON, invalid agent.
+//! End-to-end tests for the `list` command: global default, `--project`, JSON, invalid agent.
 
 mod common;
 
@@ -7,15 +7,37 @@ use predicates::prelude::*;
 use common::TestProject;
 
 #[test]
+fn list_empty_global_prints_hint() {
+    let p = TestProject::new();
+    let home = p.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+
+    // Global scope is the default; HOME is isolated so the real home is never read.
+    p.skills()
+        .env("HOME", &home)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No global skills found."))
+        .stdout(predicate::str::contains(
+            "Try listing project skills with --project",
+        ));
+}
+
+#[test]
 fn list_empty_project_prints_hint() {
     let p = TestProject::new();
+    let home = p.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+
     p.skills()
-        .arg("list")
+        .env("HOME", &home)
+        .args(["list", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("No project skills found."))
         .stdout(predicate::str::contains(
-            "Try listing global skills with -g",
+            "Try listing global skills without --project",
         ));
 }
 
@@ -25,12 +47,12 @@ fn list_json_reports_name_scope_and_source() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap()])
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success();
 
     p.skills()
-        .args(["list", "--json"])
+        .args(["list", "--project", ".", "--json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"name\": \"pdf\""))
@@ -44,12 +66,12 @@ fn list_plain_prints_skill_and_source() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap()])
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success();
 
     p.skills()
-        .arg("list")
+        .args(["list", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("Project Skills"))
@@ -58,7 +80,7 @@ fn list_plain_prints_skill_and_source() {
 }
 
 #[test]
-fn list_global_scope_with_g() {
+fn list_global_scope_by_default() {
     let p = TestProject::new();
     let home = p.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
@@ -66,13 +88,13 @@ fn list_global_scope_with_g() {
 
     p.skills()
         .env("HOME", &home)
-        .args(["add", src.to_str().unwrap(), "-g"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
 
     p.skills()
         .env("HOME", &home)
-        .args(["list", "-g"])
+        .arg("list")
         .assert()
         .success()
         .stdout(predicate::str::contains("Global Skills"))
@@ -85,14 +107,14 @@ fn list_plain_hides_agents() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap()])
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success();
 
     // Plain output shows name/path/Source but no per-skill agent column;
     // agent link status is `agent --status`'s job.
     p.skills()
-        .arg("list")
+        .args(["list", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("pdf"))
@@ -106,20 +128,20 @@ fn list_json_reports_agents_and_agent_filter() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap()])
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success();
 
     // JSON keeps the machine-readable agents visibility list.
     p.skills()
-        .args(["list", "--json"])
+        .args(["list", "--project", ".", "--json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"agents\":"));
 
     // -a filters by a specific agent; universal agents always match.
     p.skills()
-        .args(["list", "-a", "codex"])
+        .args(["list", "--project", ".", "-a", "codex"])
         .assert()
         .success()
         .stdout(predicate::str::contains("pdf"));
@@ -128,8 +150,12 @@ fn list_json_reports_agents_and_agent_filter() {
 #[test]
 fn list_invalid_agent_exits_nonzero() {
     let p = TestProject::new();
+    let home = p.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+
     p.skills()
-        .args(["list", "-a", "not-a-real-agent"])
+        .env("HOME", &home)
+        .args(["list", "--project", ".", "-a", "not-a-real-agent"])
         .assert()
         .failure()
         .code(1)
@@ -142,12 +168,12 @@ fn list_plain_prints_enabled_status() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap()])
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success();
 
     p.skills()
-        .arg("list")
+        .args(["list", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("enabled"));

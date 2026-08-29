@@ -4,6 +4,8 @@
 //! all flags, centralized in this file for readability. No subcommand
 //! aliases — the full names are short and unambiguous (cargo-style minimalism).
 
+use std::path::PathBuf;
+
 use clap::{ArgGroup, Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -45,9 +47,9 @@ pub struct AddArgs {
     /// Source(s) to install
     #[arg(required = true)]
     pub source: Vec<String>,
-    /// Install skill globally (user-level) instead of project-level
-    #[arg(short = 'g', long = "global")]
-    pub global: bool,
+    /// Operate on project scope in the given directory instead of global
+    #[arg(short = 'p', long = "project", value_name = "DIR")]
+    pub project: Option<PathBuf>,
     /// Specify skill names to install (use '*' for all skills)
     #[arg(short = 's', long = "skill", num_args = 1..)]
     pub skill: Vec<String>,
@@ -60,9 +62,9 @@ pub struct AddArgs {
 pub struct RemoveArgs {
     /// Skill names to remove
     pub skills: Vec<String>,
-    /// Remove from global scope (~/) instead of project scope
-    #[arg(short = 'g', long = "global")]
-    pub global: bool,
+    /// Operate on project scope in the given directory instead of global
+    #[arg(short = 'p', long = "project", value_name = "DIR")]
+    pub project: Option<PathBuf>,
     /// Specify skills to remove (use '*' for all skills)
     #[arg(short = 's', long = "skill", num_args = 1..)]
     pub skill: Vec<String>,
@@ -73,9 +75,9 @@ pub struct RemoveArgs {
 
 #[derive(Debug, Args)]
 pub struct ListArgs {
-    /// List global skills (default: project)
-    #[arg(short = 'g', long = "global")]
-    pub global: bool,
+    /// Operate on project scope in the given directory instead of global
+    #[arg(short = 'p', long = "project", value_name = "DIR")]
+    pub project: Option<PathBuf>,
     /// Filter by specific agents
     #[arg(short = 'a', long = "agent", num_args = 1..)]
     pub agent: Vec<String>,
@@ -88,21 +90,18 @@ pub struct ListArgs {
 pub struct UpdateArgs {
     /// Skill names to update
     pub skills: Vec<String>,
-    /// Update global skills only
-    #[arg(short = 'g', long = "global")]
-    pub global: bool,
-    /// Update project skills only
-    #[arg(short = 'p', long = "project")]
-    pub project: bool,
+    /// Update project skills only, in the given directory instead of global
+    #[arg(short = 'p', long = "project", value_name = "DIR")]
+    pub project: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
 pub struct DisableArgs {
     /// Skill names to disable
     pub skills: Vec<String>,
-    /// Disable global skills instead of project skills
-    #[arg(short = 'g', long = "global")]
-    pub global: bool,
+    /// Operate on project scope in the given directory instead of global
+    #[arg(short = 'p', long = "project", value_name = "DIR")]
+    pub project: Option<PathBuf>,
     /// Specify skills to disable (use '*' for all skills)
     #[arg(short = 's', long = "skill", num_args = 1..)]
     pub skill: Vec<String>,
@@ -115,9 +114,9 @@ pub struct DisableArgs {
 pub struct EnableArgs {
     /// Skill names to enable
     pub skills: Vec<String>,
-    /// Enable global skills instead of project skills
-    #[arg(short = 'g', long = "global")]
-    pub global: bool,
+    /// Operate on project scope in the given directory instead of global
+    #[arg(short = 'p', long = "project", value_name = "DIR")]
+    pub project: Option<PathBuf>,
     /// Specify skills to enable (use '*' for all skills)
     #[arg(short = 's', long = "skill", num_args = 1..)]
     pub skill: Vec<String>,
@@ -135,9 +134,9 @@ pub struct EnableArgs {
 pub struct AgentArgs {
     /// Agents to link/unlink (default: auto-detect installed agents; use '*' for all)
     pub agents: Vec<String>,
-    /// Link global skills dirs instead of project ones
-    #[arg(short = 'g', long = "global")]
-    pub global: bool,
+    /// Operate on project scope in the given directory instead of global
+    #[arg(short = 'p', long = "project", value_name = "DIR")]
+    pub project: Option<PathBuf>,
     /// Link agents' skills dirs to the canonical dir
     #[arg(long = "link")]
     pub link: bool,

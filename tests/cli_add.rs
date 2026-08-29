@@ -1,4 +1,4 @@
-//! End-to-end tests for the `add` command: local install, global, --list.
+//! End-to-end tests for the `add` command: project install, global default, --list.
 
 mod common;
 
@@ -12,8 +12,7 @@ fn add_local_path_installs_to_canonical() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .arg("add")
-        .arg(&src)
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("Installed 1 skill"));
@@ -79,14 +78,56 @@ fn add_global_installs_to_home() {
     std::fs::create_dir_all(&home).unwrap();
     let src = p.write_skill_source("my-skill", "pdf");
 
+    // Global scope is the default now: no flag needed, only an isolated HOME.
     p.skills()
         .env("HOME", &home)
-        .args(["add", src.to_str().unwrap(), "-g"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains("Installed 1 skill"));
 
     assert!(home.join(".agents/skills/pdf/SKILL.md").exists());
+    p.assert_absent(".agents/skills/pdf");
+}
+
+#[test]
+fn add_project_dir_flag_installs_into_given_dir() {
+    let p = TestProject::new();
+    let home = p.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let target = p.path().join("other-project");
+    std::fs::create_dir_all(&target).unwrap();
+    let src = p.write_skill_source("my-skill", "pdf");
+
+    p.skills()
+        .env("HOME", &home)
+        .args([
+            "add",
+            src.to_str().unwrap(),
+            "--project",
+            target.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Installed 1 skill"));
+
+    assert!(target.join(".agents/skills/pdf/SKILL.md").exists());
+    p.assert_absent(".agents/skills/pdf");
+    assert!(!home.join(".agents/skills/pdf").exists());
+}
+
+#[test]
+fn add_project_dir_must_exist() {
+    let p = TestProject::new();
+    let src = p.write_skill_source("my-skill", "pdf");
+
+    p.skills()
+        .args(["add", src.to_str().unwrap(), "--project", "no-such-dir"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("project directory not found"));
+
     p.assert_absent(".agents/skills/pdf");
 }
 
@@ -110,7 +151,13 @@ fn add_installs_every_source_argument() {
 
     // Multiple <source...> args: every source is installed, none silently dropped.
     p.skills()
-        .args(["add", a.to_str().unwrap(), b.to_str().unwrap()])
+        .args([
+            "add",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--project",
+            ".",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("Installed 1 skill"));

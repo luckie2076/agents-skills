@@ -45,8 +45,8 @@ agents-skills disable pdf                          # 禁用（移出规范目录
 agents-skills enable pdf                           # 重新启用（disable 的逆操作）
 ```
 
-- `-g/--global` 切换作用域：默认项目级 `./.agents/skills`，加 `-g` 为全局
-  `~/.agents/skills`。
+- 默认操作全局作用域 `~/.agents/skills`;`--project <目录>` 切换到项目级（在指定
+  目录的 `.agents/skills` 下，当前目录写 `--project .`）。
 - `agent --link` 遇到 agent 技能目录已有内容时不拒绝：整个目录原样移入备份槽
   `.agents/backup-skills/<agent>/skills/`，`agent --unlink` 时整体恢复；加 `--migrate`
   则把其中的技能移入规范目录（同名时以规范目录为准，agent 侧副本留在备份）。

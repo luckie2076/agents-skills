@@ -6,8 +6,9 @@ use agents_skills::error::Result;
 use agents_skills::{Env, ListRequest, ListedSkill, Manager};
 
 pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
+    let global = args.project.is_none();
     let req = ListRequest {
-        global: args.global,
+        global,
         agents: args.agent.clone(),
     };
     let listed = match manager.list(&req) {
@@ -20,16 +21,16 @@ pub fn run(manager: &Manager, args: ListArgs) -> Result<()> {
         return Ok(());
     }
 
-    let scope_label = if args.global { "Global" } else { "Project" };
+    let scope_label = if global { "Global" } else { "Project" };
     if listed.is_empty() {
         println!(
             "{DIM}No {} skills found.{RESET}",
             scope_label.to_lowercase()
         );
-        if args.global {
-            println!("{DIM}Try listing project skills without -g{RESET}");
+        if global {
+            println!("{DIM}Try listing project skills with --project{RESET}");
         } else {
-            println!("{DIM}Try listing global skills with -g{RESET}");
+            println!("{DIM}Try listing global skills without --project{RESET}");
         }
         return Ok(());
     }

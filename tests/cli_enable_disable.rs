@@ -1,5 +1,5 @@
 //! End-to-end tests for the `disable` and `enable` commands: move/restore, --all,
-//! idempotency, global scope, and list status.
+//! idempotency, global default, and list status.
 
 mod common;
 
@@ -10,7 +10,7 @@ use common::TestProject;
 fn add_skill(p: &TestProject, rel_dir: &str, name: &str) {
     let src = p.write_skill_source(rel_dir, name);
     p.skills()
-        .args(["add", src.to_str().unwrap()])
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success();
 }
@@ -21,7 +21,7 @@ fn disable_moves_skill_out_of_canonical_dir() {
     add_skill(&p, "my-skill", "pdf");
 
     p.skills()
-        .args(["disable", "pdf"])
+        .args(["disable", "pdf", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("Disabled pdf"));
@@ -34,10 +34,13 @@ fn disable_moves_skill_out_of_canonical_dir() {
 fn enable_moves_skill_back_into_canonical_dir() {
     let p = TestProject::new();
     add_skill(&p, "my-skill", "pdf");
-    p.skills().args(["disable", "pdf"]).assert().success();
+    p.skills()
+        .args(["disable", "pdf", "--project", "."])
+        .assert()
+        .success();
 
     p.skills()
-        .args(["enable", "pdf"])
+        .args(["enable", "pdf", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("Enabled pdf"));
@@ -50,10 +53,13 @@ fn enable_moves_skill_back_into_canonical_dir() {
 fn disable_is_idempotent() {
     let p = TestProject::new();
     add_skill(&p, "my-skill", "pdf");
-    p.skills().args(["disable", "pdf"]).assert().success();
+    p.skills()
+        .args(["disable", "pdf", "--project", "."])
+        .assert()
+        .success();
 
     p.skills()
-        .args(["disable", "pdf"])
+        .args(["disable", "pdf", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("already disabled"));
@@ -65,7 +71,7 @@ fn enable_is_idempotent() {
     add_skill(&p, "my-skill", "pdf");
 
     p.skills()
-        .args(["enable", "pdf"])
+        .args(["enable", "pdf", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("already enabled"));
@@ -75,7 +81,7 @@ fn enable_is_idempotent() {
 fn disable_missing_skill_reports_not_found() {
     let p = TestProject::new();
     p.skills()
-        .args(["disable", "nope"])
+        .args(["disable", "nope", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("not found"));
@@ -87,7 +93,10 @@ fn disable_all_disables_every_enabled_skill() {
     add_skill(&p, "s1", "alpha");
     add_skill(&p, "s2", "beta");
 
-    p.skills().args(["disable", "--all"]).assert().success();
+    p.skills()
+        .args(["disable", "--all", "--project", "."])
+        .assert()
+        .success();
 
     p.assert_absent(".agents/skills/alpha");
     p.assert_absent(".agents/skills/beta");
@@ -100,9 +109,15 @@ fn enable_all_restores_every_disabled_skill() {
     let p = TestProject::new();
     add_skill(&p, "s1", "alpha");
     add_skill(&p, "s2", "beta");
-    p.skills().args(["disable", "--all"]).assert().success();
+    p.skills()
+        .args(["disable", "--all", "--project", "."])
+        .assert()
+        .success();
 
-    p.skills().args(["enable", "--all"]).assert().success();
+    p.skills()
+        .args(["enable", "--all", "--project", "."])
+        .assert()
+        .success();
 
     p.assert_exists(".agents/skills/alpha/SKILL.md");
     p.assert_exists(".agents/skills/beta/SKILL.md");
@@ -111,21 +126,22 @@ fn enable_all_restores_every_disabled_skill() {
 }
 
 #[test]
-fn disable_global_scope_with_g() {
+fn disable_global_scope_by_default() {
     let p = TestProject::new();
     let home = p.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
     let src = p.write_skill_source("my-skill", "pdf");
 
+    // Global scope is the default now: no flag needed, only an isolated HOME.
     p.skills()
         .env("HOME", &home)
-        .args(["add", src.to_str().unwrap(), "-g"])
+        .args(["add", src.to_str().unwrap()])
         .assert()
         .success();
 
     p.skills()
         .env("HOME", &home)
-        .args(["disable", "pdf", "-g"])
+        .args(["disable", "pdf"])
         .assert()
         .success();
 
@@ -137,10 +153,13 @@ fn disable_global_scope_with_g() {
 fn list_shows_disabled_status_after_disable() {
     let p = TestProject::new();
     add_skill(&p, "my-skill", "pdf");
-    p.skills().args(["disable", "pdf"]).assert().success();
+    p.skills()
+        .args(["disable", "pdf", "--project", "."])
+        .assert()
+        .success();
 
     p.skills()
-        .arg("list")
+        .args(["list", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("pdf"))
@@ -153,15 +172,18 @@ fn list_json_reports_enabled_field() {
     add_skill(&p, "my-skill", "pdf");
 
     p.skills()
-        .args(["list", "--json"])
+        .args(["list", "--project", ".", "--json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"enabled\": true"));
 
-    p.skills().args(["disable", "pdf"]).assert().success();
+    p.skills()
+        .args(["disable", "pdf", "--project", "."])
+        .assert()
+        .success();
 
     p.skills()
-        .args(["list", "--json"])
+        .args(["list", "--project", ".", "--json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"enabled\": false"));

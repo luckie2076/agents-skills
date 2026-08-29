@@ -23,7 +23,7 @@ fn agent_link_creates_relative_dir_symlink() {
     let p = TestProject::new();
     // claude-code links even without .claude/ (historical exception).
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("linked"));
@@ -45,7 +45,7 @@ fn agent_link_parks_content_and_migrate_adopts_it() {
 
     // Plain link parks the existing skill in the backup slot and links anyway.
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("linked"))
@@ -58,7 +58,14 @@ fn agent_link_parks_content_and_migrate_adopts_it() {
 
     // --migrate pulls the parked skill into the canonical dir.
     p.skills()
-        .args(["agent", "--link", "claude-code", "--migrate"])
+        .args([
+            "agent",
+            "--link",
+            "claude-code",
+            "--project",
+            ".",
+            "--migrate",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("migrated"));
@@ -77,7 +84,7 @@ fn agent_link_parks_stray_files_and_unlink_restores_them() {
     std::fs::write(p.path().join(".claude/skills/README.txt"), "x").unwrap();
 
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("parked existing content"));
@@ -91,7 +98,7 @@ fn agent_link_parks_stray_files_and_unlink_restores_them() {
 
     // Unlink restores the parked file into a real dir.
     p.skills()
-        .args(["agent", "--unlink", "claude-code"])
+        .args(["agent", "--unlink", "claude-code", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("restored README.txt"));
@@ -105,12 +112,12 @@ fn agent_link_parks_stray_files_and_unlink_restores_them() {
 fn agent_unlink_restores_real_dir() {
     let p = TestProject::new();
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success();
 
     p.skills()
-        .args(["agent", "--unlink", "claude-code"])
+        .args(["agent", "--unlink", "claude-code", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("unlinked"));
@@ -128,13 +135,13 @@ fn agent_link_unlink_roundtrip_restores_parked_skills() {
     std::fs::write(existing.join("SKILL.md"), "x").unwrap();
 
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success();
     assert!(p.path().join(".claude/skills").is_symlink());
 
     p.skills()
-        .args(["agent", "--unlink", "claude-code"])
+        .args(["agent", "--unlink", "claude-code", "--project", "."])
         .assert()
         .success();
 
@@ -150,7 +157,7 @@ fn agent_link_unlink_roundtrip_restores_parked_skills() {
 fn agent_status_prints_installed_agents_and_link_state() {
     let p = TestProject::new();
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success();
 
@@ -158,7 +165,7 @@ fn agent_status_prints_installed_agents_and_link_state() {
     std::fs::create_dir_all(p.path().join(".codebuddy")).unwrap();
 
     p.skills()
-        .args(["agent", "--status"])
+        .args(["agent", "--status", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("Agent link status"))
@@ -181,7 +188,7 @@ fn agent_status_classifies_unlinked_agents_private_content() {
     std::fs::write(p.path().join(".codebuddy/skills/README.txt"), "x").unwrap();
 
     p.skills()
-        .args(["agent", "--status"])
+        .args(["agent", "--status", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("CodeBuddy"))
@@ -198,7 +205,7 @@ fn agent_status_shows_pending_backup_slot() {
     std::fs::write(existing.join("SKILL.md"), "x").unwrap();
 
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success();
 
@@ -208,7 +215,7 @@ fn agent_status_shows_pending_backup_slot() {
 
     p.skills()
         .env("HOME", p.path())
-        .args(["agent", "--status"])
+        .args(["agent", "--status", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("Claude Code"))
@@ -224,14 +231,14 @@ fn agent_status_orders_canonical_agents_first() {
     std::fs::create_dir_all(p.path().join(".codex")).unwrap();
     std::fs::create_dir_all(p.path().join(".claude")).unwrap();
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success();
 
     let out = p
         .skills()
         .env("HOME", p.path())
-        .args(["agent", "--status"])
+        .args(["agent", "--status", "--project", "."])
         .output()
         .unwrap();
     let stdout = String::from_utf8(out.stdout).unwrap();
@@ -249,7 +256,7 @@ fn agent_status_marks_universal_agents_as_canonical() {
 
     p.skills()
         .env("HOME", p.path())
-        .args(["agent", "--status"])
+        .args(["agent", "--status", "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("Warp"))
@@ -288,7 +295,7 @@ fn add_then_agent_link_ensures_agent_links() {
     let src = p.write_skill_source("my-skill", "pdf");
 
     p.skills()
-        .args(["add", src.to_str().unwrap()])
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success()
         .stdout(predicate::str::contains("Installed 1 skill"));
@@ -299,7 +306,7 @@ fn add_then_agent_link_ensures_agent_links() {
 
     // `agent --link` exposes the canonical dir to the agent.
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success();
     let link = p.path().join(".claude/skills");
@@ -313,15 +320,18 @@ fn remove_skill_disappears_from_linked_agents() {
     let p = TestProject::new();
     let src = p.write_skill_source("my-skill", "pdf");
     p.skills()
-        .args(["add", src.to_str().unwrap()])
+        .args(["add", src.to_str().unwrap(), "--project", "."])
         .assert()
         .success();
     p.skills()
-        .args(["agent", "--link", "claude-code"])
+        .args(["agent", "--link", "claude-code", "--project", "."])
         .assert()
         .success();
 
-    p.skills().args(["remove", "pdf"]).assert().success();
+    p.skills()
+        .args(["remove", "pdf", "--project", "."])
+        .assert()
+        .success();
 
     p.assert_absent(".agents/skills/pdf");
     // The dir link remains, but the skill is gone (no dead per-skill links).

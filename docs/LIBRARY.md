@@ -67,9 +67,11 @@ fn main() -> agents_skills::Result<()> {
 | [`DisableRequest`] | `skills: Vec<String>`、`all: bool`                                                                          |
 | [`EnableRequest`]  | `skills: Vec<String>`、`all: bool`                                                                          |
 
-所有请求结构体带 `global: bool` 字段，对应 CLI 的 `-g/--global`：`false` 操作项目级
-`./.agents/skills`，`true` 操作全局 `~/.agents/skills`。`AgentRequest` 与
-`ListRequest` 的 `agents` 字段用于限定 agent（`"*"` 或具体名，空 = 自动探测）。
+所有请求结构体带 `global: bool` 字段：`true` 操作全局 `~/.agents/skills`（CLI 默认），
+`false` 操作项目级 `./.agents/skills`（对应 CLI 的 `--project`）。项目根取自
+`Env.cwd`（可用 `Manager::builder().cwd()` 覆盖，对应 CLI 的 `--project <目录>`）。
+`AgentRequest` 与 `ListRequest` 的 `agents` 字段用于限定 agent（`"*"` 或具体名，
+空 = 自动探测）。
 
 [`UpdateRequest`] 的 `scope` 用于覆盖自动作用域判定，取值
 [`Scope::Auto`]（默认，项目有技能/锁文件则项目级，否则全局）、[`Scope::Global`]、
@@ -102,7 +104,7 @@ let outcome = manager.add(&AddRequest {
     ..Default::default()
 })?;
 
-// 列出技能（支持 -g / --json / -a agent）
+// 列出技能（global 字段选作用域；--json / -a agent 为 CLI 对应能力）
 let skills = manager.list(&ListRequest::default())?;
 let json = serde_json::to_string_pretty(&skills)?; // CLI 的 list --json
 

@@ -69,11 +69,31 @@ pub fn get_canonical_path(name: &str, global: bool, env: &Env) -> PathBuf {
     canonical_skills_dir(global, env).join(sanitize_name(name))
 }
 
+/// Canonicalize as much of `p` as exists: the deepest existing ancestor is
+/// canonicalized and the not-yet-created tail appended. Unlike
+/// `Path::canonicalize`, this also succeeds for paths that do not exist yet,
+/// so an existing base and a to-be-created target resolve against the same
+/// symlink-resolved root instead of comparing absolute vs raw paths.
+fn canonicalize_lenient(p: &Path) -> PathBuf {
+    let mut tail = PathBuf::new();
+    let mut cur = p.to_path_buf();
+    loop {
+        if let Ok(resolved) = cur.canonicalize() {
+            return resolved.join(&tail);
+        }
+        match (cur.parent(), cur.file_name()) {
+            (Some(parent), Some(name)) => {
+                tail = PathBuf::from(name).join(&tail);
+                cur = parent.to_path_buf();
+            }
+            _ => return p.to_path_buf(),
+        }
+    }
+}
+
 fn path_safe(base: &Path, target: &Path) -> bool {
-    let base_abs = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
-    let target_abs = target
-        .canonicalize()
-        .unwrap_or_else(|_| target.to_path_buf());
+    let base_abs = canonicalize_lenient(base);
+    let target_abs = canonicalize_lenient(target);
     target_abs == base_abs || target_abs.starts_with(&base_abs)
 }
 
@@ -335,6 +355,32 @@ mod tests {
         assert_eq!(sanitize_name("  "), "unnamed-skill");
         assert_eq!(sanitize_name("A.B_c"), "a.b_c");
         assert_eq!(sanitize_name("-leading-trailing-"), "leading-trailing");
+    }
+
+    #[test]
+    fn path_safe_resolves_not_yet_created_targets_consistently() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let base = tmp.path().join("skills");
+        std::fs::create_dir_all(&base).unwrap();
+
+        // Existing target: both sides canonicalize directly.
+        let existing = base.join("alpha");
+        std::fs::create_dir_all(&existing).unwrap();
+        assert!(path_safe(&base, &existing));
+
+        // Not-yet-created target under an existing base: the base canonicalizes
+        // to an absolute path while the target cannot — the naive fallback made
+        // this comparison fail (absolute vs raw) and reject a valid name.
+        assert!(path_safe(&base, &base.join("beta")));
+
+        // Fully not-yet-created base and target still resolve to one root.
+        assert!(path_safe(
+            &tmp.path().join("a/b"),
+            &tmp.path().join("a/b/c")
+        ));
+
+        // Traversal outside the base is still rejected.
+        assert!(!path_safe(&base, &tmp.path().join("elsewhere")));
     }
 
     #[test]

@@ -13,7 +13,7 @@ pub fn run(manager: &Manager, args: AddArgs) -> Result<()> {
     for source in &args.source {
         let req = AddRequest {
             source: source.clone(),
-            global: args.global,
+            global: args.project.is_none(),
             skills: args.skill.clone(),
             list_only: args.list,
         };

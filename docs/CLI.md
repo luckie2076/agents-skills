@@ -24,8 +24,9 @@ cargo install agents-skills
 
 命令不设别名（极简接口，只认全名）。
 
-通用说明：技能存放在规范目录（项目 `.agents/skills` 或全局 `~/.agents/skills`），
-`-g/--global` 切换全局作用域。
+通用说明：技能存放在规范目录（全局 `~/.agents/skills` 或项目 `.agents/skills`）。
+默认操作**全局**作用域；`-p/--project <目录>` 切换到**项目**作用域，目录值必填且
+必须已存在，操作该目录下的 `.agents/skills`（当前目录写 `--project .`）。
 
 ## add
 
@@ -35,16 +36,17 @@ cargo install agents-skills
 agents-skills add <source...> [options]
 ```
 
-| 选项                 | 说明                                      |
-| -------------------- | ----------------------------------------- |
-| `-g, --global`       | 全局安装（默认项目级）                    |
-| `-s, --skill <s>...` | 要安装的技能名（`'*'` 表示全部）          |
-| `-l, --list`         | 仅列出可用技能，不安装                    |
+| 选项                    | 说明                                        |
+| ----------------------- | ------------------------------------------- |
+| `-p, --project <dir>`   | 安装到指定项目目录（默认全局）              |
+| `-s, --skill <s>...`    | 要安装的技能名（`'*'` 表示全部）            |
+| `-l, --list`            | 仅列出可用技能，不安装                      |
 
 ```bash
-agents-skills add anthropics/skills       # 安装仓库全部技能
-agents-skills add anthropics/skills@pdf   # 仅安装指定技能
-agents-skills add anthropics/skills -l    # 只列出可用技能
+agents-skills add anthropics/skills               # 安装到全局 ~/.agents/skills
+agents-skills add anthropics/skills --project .   # 安装到当前项目 .agents/skills
+agents-skills add anthropics/skills@pdf           # 仅安装指定技能
+agents-skills add anthropics/skills -l            # 只列出可用技能
 ```
 
 安装后运行 `agents-skills agent --link` 让 agent 可见（`add` 不自动链接）。
@@ -57,11 +59,11 @@ agents-skills add anthropics/skills -l    # 只列出可用技能
 agents-skills remove [skills...] [options]
 ```
 
-| 选项                 | 说明                                  |
-| -------------------- | ------------------------------------- |
-| `-g, --global`       | 从全局作用域移除                      |
-| `-s, --skill <s>...` | 要移除的技能（`'*'` 表示全部）        |
-| `--all`              | 移除全部技能（含已禁用的）            |
+| 选项                    | 说明                                        |
+| ----------------------- | ------------------------------------------- |
+| `-p, --project <dir>`   | 从指定项目目录移除（默认全局）              |
+| `-s, --skill <s>...`    | 要移除的技能（`'*'` 表示全部）              |
+| `--all`                 | 移除全部技能（含已禁用的）                  |
 
 ```bash
 agents-skills remove pdf      # 移除指定技能
@@ -76,16 +78,16 @@ agents-skills remove --all    # 移除全部技能
 agents-skills list [options]
 ```
 
-| 选项                 | 说明                                     |
-| -------------------- | ---------------------------------------- |
-| `-g, --global`       | 列出全局技能（默认项目）                 |
-| `-a, --agent <a>...` | 按指定 Agent 过滤                        |
-| `--json`             | JSON 输出（机器可读，含 `enabled` 字段） |
+| 选项                    | 说明                                       |
+| ----------------------- | ------------------------------------------ |
+| `-p, --project <dir>`   | 列出指定项目目录的技能（默认全局）         |
+| `-a, --agent <a>...`    | 按指定 Agent 过滤                          |
+| `--json`                | JSON 输出（机器可读，含 `enabled` 字段）   |
 
 ```bash
 agents-skills list
 agents-skills list --json
-agents-skills list --global --agent claude-code
+agents-skills list --project --agent claude-code
 ```
 
 ## update
@@ -96,15 +98,14 @@ agents-skills list --global --agent claude-code
 agents-skills update [skills...] [options]
 ```
 
-| 选项            | 说明                                                     |
-| --------------- | -------------------------------------------------------- |
-| `-g, --global`  | 仅更新全局技能                                           |
-| `-p, --project` | 仅更新项目技能                                           |
+| 选项                    | 说明                                       |
+| ----------------------- | ------------------------------------------ |
+| `-p, --project <dir>`   | 仅更新指定项目目录的技能（默认全局）       |
 
 ```bash
-agents-skills update             # 更新全部（自动检测作用域）
-agents-skills update --global    # 仅更新全局技能
-agents-skills update pdf         # 仅更新指定技能
+agents-skills update               # 更新全局技能（默认作用域）
+agents-skills update --project .   # 仅更新当前项目技能
+agents-skills update pdf           # 仅更新指定技能
 ```
 
 ## disable / enable
@@ -117,11 +118,11 @@ agents-skills disable [skills...] [options]
 agents-skills enable  [skills...] [options]
 ```
 
-| 选项                 | 说明                                  |
-| -------------------- | ------------------------------------- |
-| `-g, --global`       | 全局作用域（默认项目）                |
-| `-s, --skill <s>...` | 目标技能（`'*'` 表示全部）            |
-| `--all`              | 禁用所有已启用 / 启用所有已禁用       |
+| 选项                    | 说明                                        |
+| ----------------------- | ------------------------------------------- |
+| `-p, --project <dir>`   | 项目作用域，指定项目目录（默认全局）        |
+| `-s, --skill <s>...`    | 目标技能（`'*'` 表示全部）                  |
+| `--all`                 | 禁用所有已启用 / 启用所有已禁用             |
 
 ```bash
 agents-skills disable pdf      # 禁用指定技能
@@ -138,13 +139,13 @@ agents-skills enable  --all    # 启用全部已禁用技能
 agents-skills agent [agents...] (--link | --unlink | --status) [options]
 ```
 
-| 选项           | 说明                                                     |
-| -------------- | -------------------------------------------------------- |
-| `-g, --global` | 操作全局技能目录（默认项目）                             |
-| `--link`       | 把 agent 技能目录链接到规范目录（存量内容自动备份）      |
-| `--unlink`     | 解除 agent 与规范目录的链接，并恢复备份的内容            |
-| `--status`     | 查看链接状态（只读）                                     |
-| `--migrate`    | 把存量技能迁入规范目录，含备份槽中暂存的技能（仅配合 `--link`） |
+| 选项                    | 说明                                                           |
+| ----------------------- | -------------------------------------------------------------- |
+| `-p, --project <dir>`   | 操作指定项目目录的技能目录（默认全局）                         |
+| `--link`                | 把 agent 技能目录链接到规范目录（存量内容自动备份）            |
+| `--unlink`              | 解除 agent 与规范目录的链接，并恢复备份的内容                  |
+| `--status`              | 查看链接状态（只读）                                           |
+| `--migrate`             | 把存量技能迁入规范目录，含备份槽中暂存的技能（仅配合 `--link`） |
 
 `--link`/`--unlink`/`--status` 互斥，须指定其一。`--status` 区分两种可见状态：
 原生读取规范目录的 agent（Codex、Cursor、Warp 等）标记 `(canonical dir)`，符号

@@ -5,12 +5,10 @@ use agents_skills::error::Result;
 use agents_skills::{Manager, Scope, UpdateOutcome, UpdateRequest};
 
 pub fn run(manager: &Manager, args: UpdateArgs) -> Result<()> {
-    let scope = if args.global && !args.project {
-        Scope::Global
-    } else if args.project {
+    let scope = if args.project.is_some() {
         Scope::Project
     } else {
-        Scope::Auto
+        Scope::Global
     };
     let req = UpdateRequest {
         scope,

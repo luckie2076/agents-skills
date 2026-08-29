@@ -15,13 +15,14 @@ use agents_skills::{AgentOutcome, AgentRequest, LinkOutcome, Manager};
 
 /// Run the `agent` command; `--status` reads only, `--unlink` disconnects, otherwise link.
 pub fn run(manager: &Manager, args: crate::cli::AgentArgs) -> Result<()> {
+    let global = args.project.is_none();
     if args.status {
-        render_status(manager, args.global);
+        render_status(manager, global);
         return Ok(());
     }
     let req = AgentRequest {
         agents: args.agents,
-        global: args.global,
+        global,
         unlink: args.unlink,
         migrate: args.migrate,
     };
