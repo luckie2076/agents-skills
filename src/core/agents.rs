@@ -1,18 +1,28 @@
-//! agent → skills directory mapping table (static data) + directory resolution.
+//! agent → skills directory mapping (data-driven table) + directory resolution.
 //!
-//! Data-driven design: one config line per agent; detection/dir resolution goes through the
-//! injectable [`Env`], making unit tests easy (build a temp dir, no touching the real environment).
-//! This module is the single source of truth for *where* skills live: the canonical dir
-//! ([`canonical_skills_dir`]) and each agent's own skills dir ([`agent_skills_dir`]).
+//! The table itself lives in [`agents.jsonl`](agents.jsonl) (one JSON object per line,
+//! embedded into the binary at compile time): adding or changing an agent is a one-line
+//! edit, no Rust changes required. Resolution is fully declarative — [`PathSpec`] probes
+//! are interpreted against the injectable [`Env`], making unit tests easy (build a temp
+//! dir, no touching the real environment). This module is the single source of truth for
+//! *where* skills live: the canonical dir ([`canonical_skills_dir`]) and each agent's own
+//! skills dir ([`agent_skills_dir`]).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+use serde::Deserialize;
 
 /// The common skills dir shared by most agents.
 pub const UNIVERSAL_SKILLS_DIR: &str = ".agents/skills";
 
 /// The sibling dir where disabled skills are parked (never symlinked to agents).
 pub const DISABLED_SKILLS_DIR: &str = ".agents/disabled-skills";
+
+/// Embedded agent table: one JSON object per agent line (blank lines and `#` comments
+/// allowed). Schema documented in `docs/DEVELOPER.md`.
+static AGENT_TABLE_JSONL: &str = include_str!("agents.jsonl");
 
 /// Context for agent detection/dir resolution (owns data, easy to inject in tests).
 pub struct Env {
@@ -77,661 +87,166 @@ pub fn home() -> PathBuf {
     dirs::home_dir().unwrap_or_default()
 }
 
-/// Global skills directory base.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GlobalDir {
-    /// Home-based.
-    Home(&'static str),
-    /// Config-based.
-    Config(&'static str),
-    /// Based on an env-var agent home (e.g. `~/.claude`).
-    Env(EnvKey, &'static str),
+/// `$VAR || home/<default>` (with an optional sub-path) — agent homes like Claude's.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvHomeSpec {
+    /// Environment variable consulted first (e.g. `CLAUDE_CONFIG_DIR`).
+    pub var: String,
+    /// Home-relative fallback when the var is unset or blank (e.g. `.claude`).
+    pub default: String,
+    /// Optional sub-path joined after the base (e.g. `skills`).
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
-/// An agent home key supporting `$VAR || ~/.<dir>`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnvKey {
-    /// Claude agent home.
-    Claude,
-    /// Codex agent home.
-    Codex,
-    /// Grok agent home.
-    Grok,
-    /// Hermes agent home.
-    Hermes,
-    /// Vibe agent home.
-    Vibe,
-    /// Autohand agent home.
-    Autohand,
+/// `$VAR/<path>` — a var-derived location (e.g. Zed's `%APPDATA%/Zed`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvVarSpec {
+    /// Environment variable (e.g. `APPDATA`).
+    pub var: String,
+    /// Optional sub-path joined after the var value.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
-/// Install detection method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Detect {
-    /// `home/<path>` exists.
-    Home(&'static str),
-    /// `config/<path>` exists.
-    Config(&'static str),
-    /// `cwd/<path>` exists.
-    Cwd(&'static str),
-    /// `home/<path>` or `cwd/<path>` exists.
-    HomeOrCwd(&'static str),
-    /// Special rule.
-    Special(SpecialKey),
+/// One declarative path probe: exactly one of the keys below may appear.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum PathSpec {
+    /// Exists when `home/<home>` exists.
+    Home {
+        /// Path relative to the home directory.
+        home: String,
+    },
+    /// Exists when `config/<config>` exists.
+    Config {
+        /// Path relative to the config directory.
+        config: String,
+    },
+    /// Exists when `cwd/<cwd>` exists.
+    Cwd {
+        /// Path relative to the working directory.
+        cwd: String,
+    },
+    /// `$VAR || home/<default>`, optionally joined with a sub-path.
+    EnvHome {
+        /// The env-home spec.
+        env_home: EnvHomeSpec,
+    },
+    /// `$VAR/<path>`; unmatched when the var is unset.
+    EnvVar {
+        /// The env-var spec.
+        env_var: EnvVarSpec,
+    },
+    /// Absolute system location; only probed when system probing is enabled.
+    System {
+        /// Absolute path (e.g. `/Applications/ZCode.app`).
+        system: String,
+    },
 }
 
-/// Special detection rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpecialKey {
-    /// Claude Code.
-    Claude,
-    /// Codex.
-    Codex,
-    /// OpenClaw.
-    Openclaw,
-    /// ZCode.
-    Zcode,
-    /// MiniMax.
-    Minimax,
-    /// AstrBot.
-    Astrbot,
-    /// Zed.
-    Zed,
-    /// Kimi.
-    Kimi,
-    /// Universal skills.
-    Universal,
-    /// Home-dir detection via an EnvKey.
-    Env(EnvKey),
+impl PathSpec {
+    /// Resolve against `env`; `None` = not applicable (e.g. var unset, probing off).
+    fn resolve(&self, env: &Env) -> Option<PathBuf> {
+        match self {
+            PathSpec::Home { home } => Some(env.home.join(home)),
+            PathSpec::Config { config } => Some(env.config.join(config)),
+            PathSpec::Cwd { cwd } => Some(env.cwd.join(cwd)),
+            PathSpec::EnvHome { env_home } => Some(env_home.resolve(env)),
+            PathSpec::EnvVar { env_var } => env_var.resolve(env),
+            PathSpec::System { system } => env.probe_system_dirs.then(|| PathBuf::from(system)),
+        }
+    }
 }
 
-/// An agent's directory config.
-#[derive(Debug, Clone, Copy)]
+impl EnvHomeSpec {
+    fn resolve(&self, env: &Env) -> PathBuf {
+        let base = match env.var(&self.var) {
+            Some(v) if !v.trim().is_empty() => PathBuf::from(v.trim()),
+            _ => env.home.join(&self.default),
+        };
+        match &self.path {
+            Some(p) => base.join(p),
+            None => base,
+        }
+    }
+}
+
+impl EnvVarSpec {
+    fn resolve(&self, env: &Env) -> Option<PathBuf> {
+        let base = PathBuf::from(env.var(&self.var)?);
+        Some(match &self.path {
+            Some(p) => base.join(p),
+            None => base,
+        })
+    }
+}
+
+/// An agent's directory config (one line of the embedded JSONL table).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Agent {
     /// Agent identifier (used on the CLI).
-    pub name: &'static str,
+    pub name: String,
     /// Human-readable display name.
-    pub display: &'static str,
+    pub display: String,
     /// Project-level skills dir (relative to cwd).
-    pub skills_dir: &'static str,
+    pub skills_dir: String,
     /// Global skills directory.
-    pub global: GlobalDir,
-    /// Install detection rule.
-    pub detect: Detect,
-    /// Whether it appears in the universal agents list (default true).
-    pub show_in_universal_list: bool,
+    pub global: PathSpec,
+    /// Install detection rules (any match = installed; empty = never detected).
+    #[serde(default)]
+    pub detect: Vec<PathSpec>,
+    /// Whether it is excluded from the universal agents list (default false).
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 impl Agent {
-    /// Construct an agent config.
-    pub const fn new(
-        name: &'static str,
-        display: &'static str,
-        skills_dir: &'static str,
-        global: GlobalDir,
-        detect: Detect,
-    ) -> Self {
-        Agent {
-            name,
-            display,
-            skills_dir,
-            global,
-            detect,
-            show_in_universal_list: true,
-        }
-    }
-
     /// Whether it uses the common `.agents/skills` dir (no symlink needed).
     pub fn is_universal(&self) -> bool {
         self.skills_dir == UNIVERSAL_SKILLS_DIR
     }
 }
 
-/// Agent static table (all 70+ agents).
-pub const AGENTS: &[Agent] = &[
-    Agent::new(
-        "aider-desk",
-        "AiderDesk",
-        ".aider-desk/skills",
-        GlobalDir::Home(".aider-desk/skills"),
-        Detect::Home(".aider-desk"),
-    ),
-    Agent::new(
-        "amp",
-        "Amp",
-        ".agents/skills",
-        GlobalDir::Config("agents/skills"),
-        Detect::Config("amp"),
-    ),
-    Agent::new(
-        "antigravity",
-        "Antigravity",
-        ".agents/skills",
-        GlobalDir::Home(".gemini/antigravity/skills"),
-        Detect::Home(".gemini/antigravity"),
-    ),
-    Agent::new(
-        "antigravity-cli",
-        "Antigravity CLI",
-        ".agents/skills",
-        GlobalDir::Home(".gemini/antigravity-cli/skills"),
-        Detect::Home(".gemini/antigravity-cli"),
-    ),
-    Agent::new(
-        "astrbot",
-        "AstrBot",
-        "data/skills",
-        GlobalDir::Home(".astrbot/data/skills"),
-        Detect::Special(SpecialKey::Astrbot),
-    ),
-    Agent::new(
-        "autohand-code",
-        "Autohand Code CLI",
-        ".autohand/skills",
-        GlobalDir::Env(EnvKey::Autohand, "skills"),
-        Detect::Special(SpecialKey::Env(EnvKey::Autohand)),
-    ),
-    Agent::new(
-        "augment",
-        "Augment",
-        ".augment/skills",
-        GlobalDir::Home(".augment/skills"),
-        Detect::Home(".augment"),
-    ),
-    Agent::new(
-        "bob",
-        "IBM Bob",
-        ".bob/skills",
-        GlobalDir::Home(".bob/skills"),
-        Detect::Home(".bob"),
-    ),
-    Agent::new(
-        "claude-code",
-        "Claude Code",
-        ".claude/skills",
-        GlobalDir::Env(EnvKey::Claude, "skills"),
-        Detect::Special(SpecialKey::Claude),
-    ),
-    Agent::new(
-        "openclaw",
-        "OpenClaw",
-        "skills",
-        GlobalDir::Home(".openclaw/skills"),
-        Detect::Special(SpecialKey::Openclaw),
-    ),
-    Agent::new(
-        "cline",
-        "Cline",
-        ".agents/skills",
-        GlobalDir::Home(".agents/skills"),
-        Detect::Home(".cline"),
-    ),
-    Agent::new(
-        "codearts-agent",
-        "CodeArts Agent",
-        ".codeartsdoer/skills",
-        GlobalDir::Home(".codeartsdoer/skills"),
-        Detect::Home(".codeartsdoer"),
-    ),
-    Agent::new(
-        "codebuddy",
-        "CodeBuddy",
-        ".codebuddy/skills",
-        GlobalDir::Home(".codebuddy/skills"),
-        Detect::HomeOrCwd(".codebuddy"),
-    ),
-    Agent::new(
-        "codemaker",
-        "Codemaker",
-        ".codemaker/skills",
-        GlobalDir::Home(".codemaker/skills"),
-        Detect::Home(".codemaker"),
-    ),
-    Agent::new(
-        "codestudio",
-        "Code Studio",
-        ".codestudio/skills",
-        GlobalDir::Home(".codestudio/skills"),
-        Detect::Home(".codestudio"),
-    ),
-    Agent::new(
-        "codex",
-        "Codex",
-        ".agents/skills",
-        GlobalDir::Env(EnvKey::Codex, "skills"),
-        Detect::Special(SpecialKey::Codex),
-    ),
-    Agent::new(
-        "command-code",
-        "Command Code",
-        ".commandcode/skills",
-        GlobalDir::Home(".commandcode/skills"),
-        Detect::Home(".commandcode"),
-    ),
-    Agent::new(
-        "continue",
-        "Continue",
-        ".continue/skills",
-        GlobalDir::Home(".continue/skills"),
-        Detect::HomeOrCwd(".continue"),
-    ),
-    Agent::new(
-        "cortex",
-        "Cortex Code",
-        ".cortex/skills",
-        GlobalDir::Home(".snowflake/cortex/skills"),
-        Detect::Home(".snowflake/cortex"),
-    ),
-    Agent::new(
-        "crush",
-        "Crush",
-        ".crush/skills",
-        GlobalDir::Home(".config/crush/skills"),
-        Detect::Home(".config/crush"),
-    ),
-    Agent::new(
-        "cursor",
-        "Cursor",
-        ".agents/skills",
-        GlobalDir::Home(".cursor/skills"),
-        Detect::Home(".cursor"),
-    ),
-    Agent::new(
-        "deepagents",
-        "Deep Agents",
-        ".agents/skills",
-        GlobalDir::Home(".deepagents/agent/skills"),
-        Detect::Home(".deepagents"),
-    ),
-    Agent::new(
-        "devin",
-        "Devin for Terminal",
-        ".devin/skills",
-        GlobalDir::Config("devin/skills"),
-        Detect::Config("devin"),
-    ),
-    Agent::new(
-        "dexto",
-        "Dexto",
-        ".agents/skills",
-        GlobalDir::Home(".agents/skills"),
-        Detect::Home(".dexto"),
-    )
-    .hide(),
-    Agent::new(
-        "droid",
-        "Droid",
-        ".factory/skills",
-        GlobalDir::Home(".factory/skills"),
-        Detect::Home(".factory"),
-    ),
-    Agent::new(
-        "firebender",
-        "Firebender",
-        ".agents/skills",
-        GlobalDir::Home(".firebender/skills"),
-        Detect::Home(".firebender"),
-    )
-    .hide(),
-    Agent::new(
-        "forgecode",
-        "ForgeCode",
-        ".forge/skills",
-        GlobalDir::Home(".forge/skills"),
-        Detect::Home(".forge"),
-    ),
-    Agent::new(
-        "gemini-cli",
-        "Gemini CLI",
-        ".agents/skills",
-        GlobalDir::Home(".gemini/skills"),
-        Detect::Home(".gemini"),
-    ),
-    Agent::new(
-        "github-copilot",
-        "GitHub Copilot",
-        ".agents/skills",
-        GlobalDir::Home(".copilot/skills"),
-        Detect::Home(".copilot"),
-    ),
-    Agent::new(
-        "goose",
-        "Goose",
-        ".goose/skills",
-        GlobalDir::Config("goose/skills"),
-        Detect::Config("goose"),
-    ),
-    Agent::new(
-        "grok",
-        "Grok Build",
-        ".grok/skills",
-        GlobalDir::Env(EnvKey::Grok, "skills"),
-        Detect::Special(SpecialKey::Env(EnvKey::Grok)),
-    ),
-    Agent::new(
-        "hermes-agent",
-        "Hermes Agent",
-        ".hermes/skills",
-        GlobalDir::Env(EnvKey::Hermes, "skills"),
-        Detect::Special(SpecialKey::Env(EnvKey::Hermes)),
-    ),
-    Agent::new(
-        "inference-sh",
-        "inference.sh",
-        ".inferencesh/skills",
-        GlobalDir::Home(".inferencesh/skills"),
-        Detect::Home(".inferencesh"),
-    ),
-    Agent::new(
-        "iflow-cli",
-        "iFlow CLI",
-        ".iflow/skills",
-        GlobalDir::Home(".iflow/skills"),
-        Detect::Home(".iflow"),
-    ),
-    Agent::new(
-        "jazz",
-        "Jazz",
-        ".jazz/skills",
-        GlobalDir::Home(".jazz/skills"),
-        Detect::HomeOrCwd(".jazz"),
-    ),
-    Agent::new(
-        "junie",
-        "Junie",
-        ".junie/skills",
-        GlobalDir::Home(".junie/skills"),
-        Detect::Home(".junie"),
-    ),
-    Agent::new(
-        "kilo",
-        "Kilo Code",
-        ".kilocode/skills",
-        GlobalDir::Home(".kilocode/skills"),
-        Detect::Home(".kilocode"),
-    ),
-    Agent::new(
-        "kimchi",
-        "Kimchi",
-        ".kimchi/skills",
-        GlobalDir::Home(".config/kimchi/harness/skills"),
-        Detect::Home(".config/kimchi"),
-    ),
-    Agent::new(
-        "kimi-code-cli",
-        "Kimi Code CLI",
-        ".agents/skills",
-        GlobalDir::Home(".agents/skills"),
-        Detect::Special(SpecialKey::Kimi),
-    ),
-    Agent::new(
-        "kiro-cli",
-        "Kiro CLI",
-        ".kiro/skills",
-        GlobalDir::Home(".kiro/skills"),
-        Detect::Home(".kiro"),
-    ),
-    Agent::new(
-        "kode",
-        "Kode",
-        ".kode/skills",
-        GlobalDir::Home(".kode/skills"),
-        Detect::Home(".kode"),
-    ),
-    Agent::new(
-        "lingma",
-        "Lingma",
-        ".lingma/skills",
-        GlobalDir::Home(".lingma/skills"),
-        Detect::Home(".lingma"),
-    ),
-    Agent::new(
-        "loaf",
-        "Loaf",
-        ".agents/skills",
-        GlobalDir::Home(".agents/skills"),
-        Detect::Home(".loaf"),
-    )
-    .hide(),
-    Agent::new(
-        "mcpjam",
-        "MCPJam",
-        ".mcpjam/skills",
-        GlobalDir::Home(".mcpjam/skills"),
-        Detect::Home(".mcpjam"),
-    ),
-    Agent::new(
-        "minimax-code",
-        "MiniMax Code",
-        ".minimax/skills",
-        GlobalDir::Home(".minimax/skills"),
-        Detect::Special(SpecialKey::Minimax),
-    ),
-    Agent::new(
-        "mistral-vibe",
-        "Mistral Vibe",
-        ".vibe/skills",
-        GlobalDir::Env(EnvKey::Vibe, "skills"),
-        Detect::Special(SpecialKey::Env(EnvKey::Vibe)),
-    ),
-    Agent::new(
-        "moxby",
-        "Moxby",
-        ".moxby/skills",
-        GlobalDir::Home(".moxby/skills"),
-        Detect::Home(".moxby"),
-    ),
-    Agent::new(
-        "mux",
-        "Mux",
-        ".mux/skills",
-        GlobalDir::Home(".mux/skills"),
-        Detect::Home(".mux"),
-    ),
-    Agent::new(
-        "neovate",
-        "Neovate",
-        ".neovate/skills",
-        GlobalDir::Home(".neovate/skills"),
-        Detect::Home(".neovate"),
-    ),
-    Agent::new(
-        "opencode",
-        "OpenCode",
-        ".agents/skills",
-        GlobalDir::Config("opencode/skills"),
-        Detect::Config("opencode"),
-    ),
-    Agent::new(
-        "openhands",
-        "OpenHands",
-        ".openhands/skills",
-        GlobalDir::Home(".openhands/skills"),
-        Detect::Home(".openhands"),
-    ),
-    Agent::new(
-        "ona",
-        "Ona",
-        ".ona/skills",
-        GlobalDir::Home(".ona/skills"),
-        Detect::Home(".ona"),
-    ),
-    Agent::new(
-        "pi",
-        "Pi",
-        ".pi/skills",
-        GlobalDir::Home(".pi/agent/skills"),
-        Detect::Home(".pi/agent"),
-    ),
-    Agent::new(
-        "qoder",
-        "Qoder",
-        ".qoder/skills",
-        GlobalDir::Home(".qoder/skills"),
-        Detect::Home(".qoder"),
-    ),
-    Agent::new(
-        "qoder-cn",
-        "Qoder CN",
-        ".qoder/skills",
-        GlobalDir::Home(".qoder-cn/skills"),
-        Detect::Home(".qoder-cn"),
-    ),
-    Agent::new(
-        "qwen-code",
-        "Qwen Code",
-        ".qwen/skills",
-        GlobalDir::Home(".qwen/skills"),
-        Detect::Home(".qwen"),
-    ),
-    Agent::new(
-        "replit",
-        "Replit",
-        ".agents/skills",
-        GlobalDir::Config("agents/skills"),
-        Detect::Cwd(".replit"),
-    )
-    .hide(),
-    Agent::new(
-        "reasonix",
-        "Reasonix",
-        ".reasonix/skills",
-        GlobalDir::Home(".reasonix/skills"),
-        Detect::Home(".reasonix"),
-    ),
-    Agent::new(
-        "roo",
-        "Roo Code",
-        ".roo/skills",
-        GlobalDir::Home(".roo/skills"),
-        Detect::Home(".roo"),
-    ),
-    Agent::new(
-        "rovodev",
-        "Rovo Dev",
-        ".rovodev/skills",
-        GlobalDir::Home(".rovodev/skills"),
-        Detect::Home(".rovodev"),
-    ),
-    Agent::new(
-        "tabnine-cli",
-        "Tabnine CLI",
-        ".tabnine/agent/skills",
-        GlobalDir::Home(".tabnine/agent/skills"),
-        Detect::Home(".tabnine"),
-    ),
-    Agent::new(
-        "terramind",
-        "Terramind",
-        ".terramind/skills",
-        GlobalDir::Home(".terramind/skills"),
-        Detect::Home(".terramind"),
-    ),
-    Agent::new(
-        "tinycloud",
-        "Tinycloud",
-        ".tinycloud/skills",
-        GlobalDir::Home(".tinycloud/skills"),
-        Detect::Home(".tinycloud"),
-    ),
-    Agent::new(
-        "trae",
-        "Trae",
-        ".trae/skills",
-        GlobalDir::Home(".trae/skills"),
-        Detect::Home(".trae"),
-    ),
-    Agent::new(
-        "trae-cn",
-        "Trae CN",
-        ".trae/skills",
-        GlobalDir::Home(".trae-cn/skills"),
-        Detect::Home(".trae-cn"),
-    ),
-    Agent::new(
-        "warp",
-        "Warp",
-        ".agents/skills",
-        GlobalDir::Home(".agents/skills"),
-        Detect::Home(".warp"),
-    ),
-    Agent::new(
-        "windsurf",
-        "Windsurf",
-        ".windsurf/skills",
-        GlobalDir::Home(".codeium/windsurf/skills"),
-        Detect::Home(".codeium/windsurf"),
-    ),
-    Agent::new(
-        "workbuddy",
-        "WorkBuddy",
-        ".workbuddy/skills",
-        GlobalDir::Home(".workbuddy/skills"),
-        Detect::HomeOrCwd(".workbuddy"),
-    ),
-    Agent::new(
-        "zed",
-        "Zed",
-        ".agents/skills",
-        GlobalDir::Home(".agents/skills"),
-        Detect::Special(SpecialKey::Zed),
-    ),
-    Agent::new(
-        "zcode",
-        "ZCode",
-        ".zcode/skills",
-        GlobalDir::Home(".zcode/skills"),
-        Detect::Special(SpecialKey::Zcode),
-    ),
-    Agent::new(
-        "zencoder",
-        "Zencoder",
-        ".zencoder/skills",
-        GlobalDir::Home(".zencoder/skills"),
-        Detect::Home(".zencoder"),
-    ),
-    Agent::new(
-        "zenflow",
-        "Zenflow",
-        ".zencoder/skills",
-        GlobalDir::Home(".zencoder/skills"),
-        Detect::Home(".zencoder"),
-    ),
-    Agent::new(
-        "pochi",
-        "Pochi",
-        ".pochi/skills",
-        GlobalDir::Home(".pochi/skills"),
-        Detect::Home(".pochi"),
-    ),
-    Agent::new(
-        "adal",
-        "AdaL",
-        ".adal/skills",
-        GlobalDir::Home(".adal/skills"),
-        Detect::Home(".adal"),
-    ),
-    Agent::new(
-        "universal",
-        "Universal",
-        ".agents/skills",
-        GlobalDir::Config("agents/skills"),
-        Detect::Special(SpecialKey::Universal),
-    )
-    .hide(),
-];
-
-impl Agent {
-    /// Turn off show_in_universal_list (for a few special agents).
-    const fn hide(mut self) -> Self {
-        self.show_in_universal_list = false;
-        self
+/// Parse the JSONL table; invalid input is a build bug, so it panics with the line number.
+fn parse_agent_table(jsonl: &str) -> Vec<Agent> {
+    let mut agents: Vec<Agent> = Vec::new();
+    for (idx, line) in jsonl.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let agent: Agent = serde_json::from_str(line)
+            .unwrap_or_else(|e| panic!("agents.jsonl line {}: {e}", idx + 1));
+        if let Some(prev) = agents.iter().position(|a| a.name == agent.name) {
+            panic!(
+                "agents.jsonl line {}: duplicate agent '{}' (first defined on line {})",
+                idx + 1,
+                agent.name,
+                prev + 1
+            );
+        }
+        agents.push(agent);
     }
+    assert!(
+        !agents.is_empty(),
+        "agents.jsonl must define at least one agent"
+    );
+    agents
 }
+
+/// Agent table, parsed once from the embedded JSONL (leaked to get `&'static` entries).
+pub static AGENTS: LazyLock<&'static [Agent]> = LazyLock::new(|| {
+    Box::leak(parse_agent_table(AGENT_TABLE_JSONL).into_boxed_slice()) as &'static [Agent]
+});
 
 /// Look up an agent by name.
 pub fn get_agent(name: &str) -> Option<&'static Agent> {
-    AGENTS.iter().find(|a| a.name == name)
+    let agents: &'static [Agent] = *AGENTS;
+    agents.iter().find(|a| a.name == name)
 }
 
 /// Display name of an agent (falls back to the raw name).
@@ -741,21 +256,18 @@ pub fn agent_display(name: &str) -> String {
         .unwrap_or_else(|| name.to_string())
 }
 
-/// Agents using the common dir (no symlink; excludes those with show_in_universal_list false).
+/// Agents using the common dir (no symlink; excludes hidden ones).
 pub fn universal_agents() -> Vec<&'static Agent> {
-    AGENTS
+    let agents: &'static [Agent] = *AGENTS;
+    agents
         .iter()
-        .filter(|a| a.is_universal() && a.show_in_universal_list)
+        .filter(|a| a.is_universal() && !a.hidden)
         .collect()
 }
 
 /// An agent's global skills dir (None when global is unsupported).
 pub fn global_skills_dir(agent: &Agent, env: &Env) -> Option<PathBuf> {
-    match agent.global {
-        GlobalDir::Home(p) => Some(env.home.join(p)),
-        GlobalDir::Config(p) => Some(env.config.join(p)),
-        GlobalDir::Env(key, p) => Some(env_home(key, env).join(p)),
-    }
+    agent.global.resolve(env)
 }
 
 /// Canonical skills dir: `(global ? home : cwd)/.agents/skills`.
@@ -781,81 +293,28 @@ pub fn agent_skills_dir(agent: &Agent, global: bool, env: &Env) -> Option<PathBu
     if global {
         global_skills_dir(agent, env)
     } else {
-        Some(env.cwd.join(agent.skills_dir))
+        Some(env.cwd.join(&agent.skills_dir))
     }
 }
 
-/// `$VAR || home/.<default>` (per-agent home conventions).
-pub fn env_home(key: EnvKey, env: &Env) -> PathBuf {
-    let (var, default) = match key {
-        EnvKey::Claude => ("CLAUDE_CONFIG_DIR", ".claude"),
-        EnvKey::Codex => ("CODEX_HOME", ".codex"),
-        EnvKey::Grok => ("GROK_HOME", ".grok"),
-        EnvKey::Hermes => ("HERMES_HOME", ".hermes"),
-        EnvKey::Vibe => ("VIBE_HOME", ".vibe"),
-        EnvKey::Autohand => ("AUTOHAND_HOME", ".autohand"),
-    };
-    match env.var(var) {
-        Some(v) if !v.trim().is_empty() => PathBuf::from(v.trim()),
-        _ => env.home.join(default),
-    }
-}
-
-/// Determine whether an agent is installed.
+/// Determine whether an agent is installed: any detection rule resolves to an existing path.
 pub fn is_installed(agent: &Agent, env: &Env) -> bool {
-    match agent.detect {
-        Detect::Home(p) => env.home.join(p).exists(),
-        Detect::Config(p) => env.config.join(p).exists(),
-        Detect::Cwd(p) => env.cwd.join(p).exists(),
-        Detect::HomeOrCwd(p) => env.home.join(p).exists() || env.cwd.join(p).exists(),
-        Detect::Special(k) => special_detect(k, env),
-    }
-}
-
-fn special_detect(k: SpecialKey, env: &Env) -> bool {
-    match k {
-        SpecialKey::Claude => env_home(EnvKey::Claude, env).exists(),
-        SpecialKey::Codex => {
-            env_home(EnvKey::Codex, env).exists()
-                || (env.probe_system_dirs && Path::new("/etc/codex").exists())
-        }
-        SpecialKey::Openclaw => {
-            env.home.join(".openclaw").exists()
-                || env.home.join(".clawdbot").exists()
-                || env.home.join(".moltbot").exists()
-        }
-        SpecialKey::Zcode => {
-            env.home.join(".zcode").exists()
-                || (env.probe_system_dirs && Path::new("/Applications/ZCode.app").exists())
-        }
-        SpecialKey::Minimax => {
-            env.home.join(".minimax").exists()
-                || (env.probe_system_dirs && Path::new("/Applications/MiniMax Code.app").exists())
-        }
-        SpecialKey::Astrbot => {
-            env.cwd.join("data/skills").exists() || env.home.join(".astrbot").exists()
-        }
-        SpecialKey::Zed => {
-            env.config.join("zed").exists()
-                || env
-                    .var("APPDATA")
-                    .map(|a| Path::new(&a).join("Zed").exists())
-                    .unwrap_or(false)
-        }
-        SpecialKey::Kimi => env.home.join(".kimi-code").exists() || env.home.join(".kimi").exists(),
-        SpecialKey::Universal => false,
-        SpecialKey::Env(key) => env_home(key, env).exists(),
-    }
+    agent
+        .detect
+        .iter()
+        .any(|spec| spec.resolve(env).is_some_and(|p| p.exists()))
 }
 
 /// Detect currently installed agents (universal is never detected as installed).
 pub fn detect_installed_agents(env: &Env) -> Vec<&'static Agent> {
-    AGENTS.iter().filter(|a| is_installed(a, env)).collect()
+    let agents: &'static [Agent] = *AGENTS;
+    agents.iter().filter(|a| is_installed(a, env)).collect()
 }
 
 /// Ensure universal agents are present (append those missing from the target list).
 pub fn ensure_universal_agents(mut target: Vec<&'static Agent>) -> Vec<&'static Agent> {
-    for a in AGENTS.iter().filter(|a| a.is_universal()) {
+    let agents: &'static [Agent] = *AGENTS;
+    for a in agents.iter().filter(|a| a.is_universal()) {
         if !target.iter().any(|x| x.name == a.name) {
             target.push(a);
         }
@@ -890,7 +349,7 @@ mod tests {
 
     #[test]
     fn hidden_agents_excluded_from_universal_list() {
-        let names: Vec<&str> = universal_agents().iter().map(|a| a.name).collect();
+        let names: Vec<&str> = universal_agents().iter().map(|a| a.name.as_str()).collect();
         assert!(!names.contains(&"dexto"));
         assert!(!names.contains(&"universal"));
         assert!(names.contains(&"amp"));
@@ -943,5 +402,99 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let env = env_at(&tmp);
         assert!(!is_installed(get_agent("universal").unwrap(), &env));
+    }
+
+    // Declarative detection semantics (the rules that used to live in special_detect).
+
+    #[test]
+    fn env_home_prefers_var_over_default() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut env = env_at(&tmp);
+        let claude = get_agent("claude-code").unwrap();
+
+        // Default home: ~/.claude.
+        std::fs::create_dir_all(tmp.path().join(".claude")).unwrap();
+        assert!(is_installed(claude, &env));
+
+        // Var override: $CLAUDE_CONFIG_DIR wins, default no longer consulted.
+        let mut vars = HashMap::new();
+        vars.insert(
+            "CLAUDE_CONFIG_DIR".to_string(),
+            tmp.path().join("cc").display().to_string(),
+        );
+        env.set_vars(vars);
+        assert!(!is_installed(claude, &env));
+        std::fs::create_dir_all(tmp.path().join("cc")).unwrap();
+        assert!(is_installed(claude, &env));
+    }
+
+    #[test]
+    fn env_var_unset_never_matches() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut env = env_at(&tmp);
+        env.set_vars(HashMap::new()); // no APPDATA
+        let zed = get_agent("zed").unwrap();
+        assert!(!is_installed(zed, &env)); // config/zed also missing
+
+        let mut vars = HashMap::new();
+        vars.insert(
+            "APPDATA".to_string(),
+            tmp.path().join("appdata").display().to_string(),
+        );
+        env.set_vars(vars);
+        assert!(!is_installed(zed, &env)); // set but path missing
+        std::fs::create_dir_all(tmp.path().join("appdata/Zed")).unwrap();
+        assert!(is_installed(zed, &env));
+    }
+
+    #[test]
+    fn system_probe_respects_probe_flag() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut env = env_at(&tmp);
+        env.set_vars(HashMap::new());
+        env.set_probe_system_dirs(true);
+        let marker = tmp.path().join("sys-marker"); // absolute, outside home/config/cwd
+        std::fs::create_dir_all(&marker).unwrap();
+
+        let spec = PathSpec::System {
+            system: marker.display().to_string(),
+        };
+        assert!(spec.resolve(&env).is_some());
+        env.set_probe_system_dirs(false);
+        assert!(spec.resolve(&env).is_none());
+    }
+
+    #[test]
+    fn agent_table_parses_comments_and_blank_lines() {
+        let table = parse_agent_table(
+            "# header comment\n\n{\"name\":\"x\",\"display\":\"X\",\"skills_dir\":\".agents/skills\",\"global\":{\"home\":\".x/skills\"},\"detect\":[{\"home\":\".x\"}]}\n\n",
+        );
+        assert_eq!(table.len(), 1);
+        assert!(table[0].is_universal());
+        assert!(!table[0].hidden);
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate agent 'x'")]
+    fn agent_table_rejects_duplicate_names() {
+        let one =
+            r#"{"name":"x","display":"X","skills_dir":"s","global":{"home":".x"},"detect":[]}"#;
+        let two =
+            r#"{"name":"x","display":"Y","skills_dir":"s","global":{"home":".y"},"detect":[]}"#;
+        parse_agent_table(&format!("{one}\n{two}\n"));
+    }
+
+    #[test]
+    #[should_panic(expected = "agents.jsonl line 2:")]
+    fn agent_table_reports_offending_line() {
+        parse_agent_table(
+            "{\"name\":\"x\",\"display\":\"X\",\"skills_dir\":\"s\",\"global\":{\"home\":\".x\"},\"detect\":[]}\nnot json\n",
+        );
+    }
+
+    #[test]
+    fn agent_table_row_count() {
+        let agents: &'static [Agent] = *AGENTS;
+        assert_eq!(agents.len(), 75);
     }
 }

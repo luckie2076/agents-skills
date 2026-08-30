@@ -29,7 +29,8 @@ src/
 ├── core/               领域逻辑（纯函数、依赖可注入）
 │   ├── mod.rs          模块组织与重导出
 │   ├── source.rs       来源字符串解析
-│   ├── agents.rs       Agent → 技能目录映射表
+│   ├── agents.rs       agent 表的声明式解释器(目录解析 + 安装检测)
+│   ├── agents.jsonl    agent 表:每个 agent 一行 JSON
 │   ├── discover.rs     SKILL.md 发现 + frontmatter 解析
 │   ├── fetch.rs        git 克隆 / HTTP 下载 / 归档解包
 │   ├── github.rs       GitHub API 单技能快速拉取
@@ -63,6 +64,38 @@ tests/
 ├── cli_enable_disable.rs
 └── cli_version.rs
 ```
+
+## 新增 agent
+
+agent 表位于 `src/core/agents.jsonl` —— 每个 agent 一行 JSON,编译期通过
+`include_str!` 嵌入二进制。新增、修改或删除 agent 只需编辑该文件的一行,
+无需改动任何 Rust 代码。允许空行和 `#` 注释,文件中的行序即列表展示顺序。
+
+```jsonc
+{
+  "name": "claude-code",      // 必填,唯一标识(CLI 中使用)
+  "display": "Claude Code",   // 必填,人类可读名称
+  "skills_dir": ".claude/skills", // 必填,项目级技能目录(相对 cwd)
+  "global": { "env_home": { "var": "CLAUDE_CONFIG_DIR", "default": ".claude", "path": "skills" } },
+  "detect": [ { "env_home": { "var": "CLAUDE_CONFIG_DIR", "default": ".claude" } } ],
+  "hidden": false             // 可选,是否从 universal agents 列表隐藏(默认 false)
+}
+```
+
+`global` 是单个路径规格;`detect` 是路径规格列表——只要其中任意一条解析到
+已存在的路径,该 agent 即被视为已安装。每条规格只能包含以下键之一:
+
+| 键 | 解析为 |
+| --- | ----------- |
+| `{"home": "..."}` | `home/<path>` |
+| `{"config": "..."}` | `config/<path>` |
+| `{"cwd": "..."}` | `cwd/<path>` |
+| `{"env_home": {"var": "...", "default": "...", "path": "..."}}` | `$VAR \|\| home/<default>`,再拼接 `<path>` |
+| `{"env_var": {"var": "...", "path": "..."}}` | `$VAR/<path>`;变量未设置时不匹配 |
+| `{"system": "/abs/path"}` | 绝对路径;仅开启系统探测时才检查 |
+
+universal agents(`skills_dir` 为 `.agents/skills` 的 agent)共用规范目录,
+无需符号链接;`universal` 伪 agent 的 `"detect": []` 使它永远不会被检测为已安装。
 
 ## 开发
 

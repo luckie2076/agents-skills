@@ -344,7 +344,7 @@ fn backup_root(global: bool, env: &Env) -> PathBuf {
 
 /// One agent's backup slot: `<backup root>/<agent name>`.
 fn backup_slot(agent: &Agent, global: bool, env: &Env) -> PathBuf {
-    backup_root(global, env).join(agent.name)
+    backup_root(global, env).join(&agent.name)
 }
 
 /// Entries inside the parked dir (a missing dir is empty).

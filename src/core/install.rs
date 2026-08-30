@@ -222,7 +222,7 @@ pub fn list_installed_skills(
         let mut agents: Vec<String> = Vec::new();
         // Universal agents use the canonical dir directly.
         for agent in universal_agents() {
-            if !agent_filter.is_empty() && !agent_filter.iter().any(|a| a == agent.name) {
+            if !agent_filter.is_empty() && !agent_filter.iter().any(|a| a == &agent.name) {
                 continue;
             }
             agents.push(agent.name.to_string());
@@ -231,7 +231,7 @@ pub fn list_installed_skills(
             .iter()
             .filter(|a| !a.is_universal())
         {
-            if !agent_filter.is_empty() && !agent_filter.iter().any(|a| a == agent.name) {
+            if !agent_filter.is_empty() && !agent_filter.iter().any(|a| a == &agent.name) {
                 continue;
             }
             let Some(base) = crate::core::agents::agent_skills_dir(agent, global, env) else {

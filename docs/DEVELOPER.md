@@ -35,7 +35,8 @@ src/
 ├── core/               Domain logic (pure functions, injectable dependencies)
 │   ├── mod.rs          Module organization and re-exports
 │   ├── source.rs       Source-string parsing
-│   ├── agents.rs       Agent → skills-directory mapping table
+│   ├── agents.rs       Declarative interpreter over the agent table (resolution + detection)
+│   ├── agents.jsonl    The agent table: one JSON object per agent line
 │   ├── discover.rs     SKILL.md discovery + frontmatter parsing
 │   ├── fetch.rs        git clone / HTTP download / archive unpacking
 │   ├── github.rs       GitHub API single-skill fast path
@@ -69,6 +70,42 @@ tests/
 ├── cli_enable_disable.rs
 └── cli_version.rs
 ```
+
+## Adding an agent
+
+The agent table lives in `src/core/agents.jsonl` — one JSON object per agent,
+embedded into the binary at compile time (`include_str!`). Adding, changing, or
+removing an agent is a one-line edit in that file; no Rust changes are required.
+Blank lines and `#` comments are allowed, and the file order defines the
+listing order.
+
+```jsonc
+{
+  "name": "claude-code",      // required, unique identifier (used on the CLI)
+  "display": "Claude Code",   // required, human-readable name
+  "skills_dir": ".claude/skills", // required, project-level skills dir (relative to cwd)
+  "global": { "env_home": { "var": "CLAUDE_CONFIG_DIR", "default": ".claude", "path": "skills" } },
+  "detect": [ { "env_home": { "var": "CLAUDE_CONFIG_DIR", "default": ".claude" } } ],
+  "hidden": false             // optional, hide from the universal agents list (default false)
+}
+```
+
+`global` is a single path spec, and `detect` is a list of path specs — an agent
+is detected as installed when any one of them resolves to an existing path.
+Exactly one of these keys per spec:
+
+| Key | Resolves to |
+| --- | ----------- |
+| `{"home": "..."}` | `home/<path>` |
+| `{"config": "..."}` | `config/<path>` |
+| `{"cwd": "..."}` | `cwd/<path>` |
+| `{"env_home": {"var": "...", "default": "...", "path": "..."}}` | `$VAR \|\| home/<default>`, then `<path>` joined |
+| `{"env_var": {"var": "...", "path": "..."}}` | `$VAR/<path>`; unmatched when the var is unset |
+| `{"system": "/abs/path"}` | absolute path; only probed when system probing is on |
+
+Universal agents (those whose `skills_dir` is `.agents/skills`) share the
+canonical directory and need no symlinks; the `universal` pseudo-agent carries
+`"detect": []` so it is never detected as installed.
 
 ## Development
 

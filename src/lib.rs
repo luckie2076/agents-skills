@@ -58,5 +58,8 @@ pub use error::{Error, Result, SkillsError};
 
 /// Every known agent identifier, in table order (useful for rendering choices).
 pub fn agent_names() -> Vec<&'static str> {
-    core::agents::AGENTS.iter().map(|a| a.name).collect()
+    core::agents::AGENTS
+        .iter()
+        .map(|a| a.name.as_str())
+        .collect()
 }
