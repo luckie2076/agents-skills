@@ -8,7 +8,7 @@
 
 ```toml
 [dependencies]
-agents-skills = "0.9"
+agents-skills = "0.10"
 ```
 
 ## 快速开始

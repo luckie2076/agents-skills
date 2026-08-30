@@ -10,7 +10,7 @@ reference see [CLI.md](CLI.md).
 
 ```toml
 [dependencies]
-agents-skills = "0.9"
+agents-skills = "0.10"
 ```
 
 ## Quick start
