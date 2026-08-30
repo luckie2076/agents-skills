@@ -72,4 +72,12 @@
 {"name":"zenflow","display":"Zenflow","skills_dir":".zencoder/skills","global":{"home":".zencoder/skills"},"detect":[{"home":".zencoder"}]}
 {"name":"pochi","display":"Pochi","skills_dir":".pochi/skills","global":{"home":".pochi/skills"},"detect":[{"home":".pochi"}]}
 {"name":"adal","display":"AdaL","skills_dir":".adal/skills","global":{"home":".adal/skills"},"detect":[{"home":".adal"}]}
+{"name":"eve","display":"Eve","skills_dir":"agent/skills","global":{"env_var":{"var":"EVE_GLOBAL_SKILLS_DIR"}},"detect":[]}
+{"name":"posit-assistant","display":"Posit Assistant","skills_dir":".posit/assistant/skills","global":{"home":".posit/assistant/skills"},"detect":[{"home":".posit/assistant"}]}
+{"name":"promptscript","display":"PromptScript","skills_dir":".agents/skills","global":{"env_var":{"var":"PROMPTSCRIPT_GLOBAL_SKILLS_DIR"}},"detect":[],"hidden":true}
+{"name":"comate","display":"Comate","skills_dir":".comate/skills","global":{"home":".comate/skills"},"detect":[{"home":".comate"},{"cwd":".comate"}]}
+{"name":"qwenwork","display":"QwenWork","skills_dir":".qwenwork/skills","global":{"home":".qwenwork/skills"},"detect":[{"home":".qwenwork"}]}
+{"name":"qwenworkcn","display":"QwenWork CN","skills_dir":".qwenwork/skills","global":{"home":".qwenworkcn/skills"},"detect":[{"home":".qwenworkcn"}]}
+{"name":"joycode","display":"JoyCode","skills_dir":".joycode/skills","global":{"home":".joycode/skills"},"detect":[{"home":".joycode"}]}
+{"name":"lmstudio","display":"LM Studio","skills_dir":".lmstudio/skills","global":{"home":".lmstudio/skills"},"detect":[{"home":".lmstudio"}]}
 {"name":"universal","display":"Universal","skills_dir":".agents/skills","global":{"config":"agents/skills"},"detect":[],"hidden":true}
