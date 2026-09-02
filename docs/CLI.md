@@ -66,11 +66,11 @@ Remove installed skills from the canonical directory.
 agents-skills remove [skills...] [options]
 ```
 
-| Option                | Description                                                 |
-| --------------------- | ----------------------------------------------------------- |
-| `-p, --project <dir>` | Remove from the given project directory (default: global)   |
-| `-s, --skill <s>...`  | Skills to remove (`'*'` = all)                              |
-| `--all`               | Remove all skills (including disabled ones)                 |
+| Option                | Description                                               |
+| --------------------- | --------------------------------------------------------- |
+| `-p, --project <dir>` | Remove from the given project directory (default: global) |
+| `-s, --skill <s>...`  | Skills to remove (`'*'` = all)                            |
+| `--all`               | Remove all skills (including disabled ones)               |
 
 ```bash
 agents-skills remove pdf      # remove the specified skill
@@ -107,9 +107,9 @@ skills are skipped.
 agents-skills update [skills...] [options]
 ```
 
-| Option                | Description                                                        |
-| --------------------- | ------------------------------------------------------------------ |
-| `-p, --project <dir>` | Only update skills in the given project directory (default: global)|
+| Option                | Description                                                         |
+| --------------------- | ------------------------------------------------------------------- |
+| `-p, --project <dir>` | Only update skills in the given project directory (default: global) |
 
 ```bash
 agents-skills update               # update global skills (default scope)
@@ -151,12 +151,12 @@ directory.
 agents-skills agent [agents...] (--link | --unlink | --status) [options]
 ```
 
-| Option                | Description                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| `-p, --project <dir>` | Operate on the skills directory under the given project directory (default: global)     |
-| `--link`              | Link the agent's skills directory to the canonical directory (pre-existing content is backed up automatically) |
-| `--unlink`            | Unlink the agent from the canonical directory and restore the backed-up content         |
-| `--status`            | Show link status (read-only)                                                            |
+| Option                | Description                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `-p, --project <dir>` | Operate on the skills directory under the given project directory (default: global)                                      |
+| `--link`              | Link the agent's skills directory to the canonical directory (pre-existing content is backed up automatically)           |
+| `--unlink`            | Unlink the agent from the canonical directory and restore the backed-up content                                          |
+| `--status`            | Show link status (read-only)                                                                                             |
 | `--migrate`           | Migrate pre-existing skills into the canonical directory, including those parked in the backup slot (only with `--link`) |
 
 `--link`, `--unlink`, and `--status` are mutually exclusive; exactly one must
@@ -173,14 +173,17 @@ Agents default to the auto-detected set; `'*'` means all.
 How linking handles pre-existing content (data is never destroyed):
 
 - Empty directory: replaced by the link directly.
+
 - Otherwise: the whole skills directory is moved as-is into the backup slot
   `.agents/backup-skills/<agent>/skills/` (project-level under
   `./.agents/backup-skills/`, global under `~/.agents/backup-skills/`; the slot
   contains a `manifest.json`), then the link is created; `--unlink` restores
   everything with a single atomic rename.
+
 - With `--migrate`: after the backup, the skill directories inside are moved
   into the canonical directory; on name conflicts the canonical copy wins and
   the agent-side copy stays in the backup.
+
 - Refused in only two cases: the directory itself is a symlink pointing
   elsewhere; or the backup from the previous link has not been restored yet.
 
@@ -196,5 +199,7 @@ agents-skills agent --unlink claude-code         # unlink the specified agent an
 
 - Source formats and install locations: see
   [README · How it works](../README.md#how-it-works).
+
 - Library API (the `Manager` method and request/result types behind each
   command): see [LIBRARY.md](LIBRARY.md).
+
