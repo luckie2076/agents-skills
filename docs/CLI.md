@@ -181,8 +181,9 @@ How linking handles pre-existing content (data is never destroyed):
   everything with a single atomic rename.
 
 - With `--migrate`: after the backup, the skill directories inside are moved
-  into the canonical directory; on name conflicts the canonical copy wins and
-  the agent-side copy stays in the backup.
+  into the canonical directory; on name conflicts the canonical copy wins, and
+  skills disabled in `disabled-skills` stay disabled (the agent-side copy stays
+  in the backup).
 
 - Refused in only two cases: the directory itself is a symlink pointing
   elsewhere; or the backup from the previous link has not been restored yet.

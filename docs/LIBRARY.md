@@ -100,7 +100,9 @@ otherwise global), [`Scope::Global`], [`Scope::Project`].
   non-empty skills directory is moved wholesale into the backup slot
   `.agents/backup-skills/<agent>/skills/` and restored with a single rename on
   unlink; `migrate: true` moves the skills inside into the canonical directory
-  (the canonical copy wins on name conflicts). [`LinkOutcome::Refused`] is
+  (the canonical copy wins on name conflicts; skills disabled in
+  `disabled-skills` stay disabled, their agent-side copies stay parked).
+  [`LinkOutcome::Refused`] is
   returned only when the agent directory is a symlink pointing elsewhere, or
   when an unrestored old backup exists.
 

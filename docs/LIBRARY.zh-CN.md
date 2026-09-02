@@ -90,8 +90,9 @@ fn main() -> agents_skills::Result<()> {
   `unlink: true` 即 unlink，`migrate: true` 仅在 link 时生效（对应 CLI
   `--link --migrate`）。链接从不销毁已有内容：非空技能目录整体移入备份槽
   `.agents/backup-skills/<agent>/skills/`，unlink 时一次 rename 恢复；`migrate: true`
-  把其中的技能移入规范目录（同名时规范目录副本优先）。仅当 agent 目录是指向
-  别处的符号链接，或存在未恢复的旧备份时报 [`LinkOutcome::Refused`]。
+  把其中的技能移入规范目录（同名时规范目录副本优先；已禁用的技能保持禁用，
+  agent 侧副本留在备份槽）。仅当 agent 目录是指向别处的符号链接，或存在未恢复
+  的旧备份时报 [`LinkOutcome::Refused`]。
 
 ### 常见操作
 

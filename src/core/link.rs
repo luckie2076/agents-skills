@@ -10,7 +10,9 @@
 //! whole — a single atomic rename — into the agent's backup slot
 //! (`.agents/backup-skills/<agent>/skills`, next to a `manifest.json`). With `migrate`
 //! the skill dirs are then adopted out of the slot into the canonical dir (name
-//! clashes keep the canonical copy); without it everything stays parked.
+//! clashes keep the canonical copy; skills disabled in the `disabled-skills` dir
+//! stay disabled — those agent-side copies stay parked); without it everything
+//! stays parked.
 //! [`unlink_agent`] disconnects an agent and restores the parked dir with one
 //! rename; `--migrate` on an already linked agent pulls parked skills into the
 //! canonical dir.
@@ -21,7 +23,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::agents::{Agent, Env, agent_skills_dir, canonical_skills_dir};
+use crate::core::agents::{
+    Agent, Env, agent_skills_dir, canonical_skills_dir, disabled_skills_dir,
+};
+use crate::core::install::sanitize_name;
 
 /// Name of the manifest file inside a backup slot.
 const MANIFEST_NAME: &str = "manifest.json";
@@ -51,7 +56,8 @@ pub enum LinkOutcome {
         /// Names of the skill directories moved into the canonical dir.
         moved: Vec<String>,
         /// Skills whose name already exists in the canonical dir (the canonical
-        /// copy wins); the agent-side copy stays parked in the backup slot.
+        /// copy wins) or is disabled in the `disabled-skills` dir (disabled
+        /// wins); the agent-side copy stays parked in the backup slot.
         skipped: Vec<String>,
         /// Non-skill entries parked in the backup slot (reporting only).
         parked_others: Vec<String>,
@@ -125,7 +131,8 @@ pub fn is_agent_linked(agent: &Agent, global: bool, env: &Env) -> bool {
 /// Content handling: an empty dir is replaced by the link directly; any non-empty
 /// dir is parked whole into the agent's backup slot (one atomic rename) before
 /// linking. With `migrate`, skill dirs are then adopted into the canonical dir
-/// (name clashes keep the canonical copy). Refusal is reserved for a foreign
+/// (name clashes keep the canonical copy; names disabled in the
+/// `disabled-skills` dir stay disabled). Refusal is reserved for a foreign
 /// symlink or a previous backup that is still parked.
 pub fn link_agent(agent: &Agent, global: bool, env: &Env, migrate: bool) -> LinkOutcome {
     // Universal agents use the canonical dir natively — nothing to link.
@@ -210,7 +217,12 @@ pub fn link_agent(agent: &Agent, global: bool, env: &Env, migrate: bool) -> Link
                 return failed;
             }
             let (moved, skipped) = if migrate {
-                match adopt_skills(&canonical, &parked, &skills) {
+                match adopt_skills(
+                    &canonical,
+                    &disabled_skills_dir(global, env),
+                    &parked,
+                    &skills,
+                ) {
                     Ok(pair) => pair,
                     Err(error) => return LinkOutcome::Failed { error },
                 }
@@ -383,10 +395,13 @@ fn park_dir(
     None
 }
 
-/// Move skill dirs out of the parked dir into the canonical dir (name clashes
-/// keep the canonical copy — those stay parked). Returns `(moved, skipped)`.
+/// Move skill dirs out of the parked dir into the canonical dir. Name clashes keep
+/// the canonical copy, and names parked in the disabled dir stay disabled (the
+/// agent-side copy stays parked in both cases — a disabled skill must not be
+/// re-imported). Returns `(moved, skipped)`.
 fn adopt_skills(
     canonical: &Path,
+    disabled: &Path,
     parked: &Path,
     skills: &[String],
 ) -> Result<(Vec<String>, Vec<String>), String> {
@@ -398,7 +413,10 @@ fn adopt_skills(
     fs::create_dir_all(canonical).map_err(|e| format!("create {}: {e}", canonical.display()))?;
     for name in skills {
         let from = parked.join(name);
-        if canonical.join(name).exists() {
+        if canonical.join(name).exists()
+            || disabled.join(name).exists()
+            || disabled.join(sanitize_name(name)).exists()
+        {
             skipped.push(name.clone());
         } else if let Err(e) = fs::rename(&from, canonical.join(name)) {
             return Err(format!("move {}: {e}", from.display()));
@@ -411,7 +429,8 @@ fn adopt_skills(
 
 /// The agent dir is already linked to the canonical dir; with `--migrate`, pull
 /// parked skill dirs out of the backup slot into the canonical dir. Name-clash
-/// copies, non-skill entries and old-model links stay parked.
+/// copies, skills disabled in the `disabled-skills` dir, non-skill entries and
+/// old-model links stay parked.
 fn migrate_from_backup(agent: &Agent, global: bool, env: &Env, canonical: &Path) -> LinkOutcome {
     let slot = backup_slot(agent, global, env);
     let parked = slot.join(PARKED_DIR_NAME);
@@ -422,7 +441,12 @@ fn migrate_from_backup(agent: &Agent, global: bool, env: &Env, canonical: &Path)
     }
     let names: Vec<String> = entries.iter().map(entry_name).collect();
     let (skills, others) = classify(&entries, canonical);
-    let (moved, skipped) = match adopt_skills(canonical, &parked, &skills) {
+    let (moved, skipped) = match adopt_skills(
+        canonical,
+        &disabled_skills_dir(global, env),
+        &parked,
+        &skills,
+    ) {
         Ok(pair) => pair,
         Err(error) => return LinkOutcome::Failed { error },
     };
@@ -729,7 +753,7 @@ fn relative_target(canonical: &Path, link: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use crate::core::agents::get_agent;
-    use crate::core::install::install_skill;
+    use crate::core::install::{install_skill, move_skill};
     use crate::core::test_utils::{env_at, write_and_parse_skill};
 
     /// Env with distinct home/cwd (for global-scope tests).
@@ -1064,6 +1088,86 @@ mod tests {
             "agent copy"
         );
         assert!(tmp.path().join(".claude/skills").is_symlink());
+    }
+
+    #[test]
+    fn link_agent_migrate_keeps_disabled_skills_disabled() {
+        // A skill disabled into the disabled dir must not be re-imported when
+        // linking an agent that holds its own copy of the same skill.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = env_at(&tmp);
+        let src = tmp.path().join("src-skill");
+        let skill = write_and_parse_skill(&src, "pdf");
+        install_skill(&skill, false, &env);
+        move_skill("pdf", false, false, &env).unwrap();
+        // The agent holds its own copy of the disabled skill plus a fresh one.
+        let existing = tmp.path().join(".claude/skills/pdf");
+        fs::create_dir_all(&existing).unwrap();
+        fs::write(existing.join("SKILL.md"), "agent copy").unwrap();
+        fs::create_dir_all(tmp.path().join(".claude/skills/notes")).unwrap();
+        fs::write(tmp.path().join(".claude/skills/notes/SKILL.md"), "x").unwrap();
+        let agent = get_agent("claude-code").unwrap();
+
+        match link_agent(agent, false, &env, true) {
+            LinkOutcome::Migrated { moved, skipped, .. } => {
+                assert_eq!(moved, vec!["notes"]);
+                assert_eq!(skipped, vec!["pdf"]);
+            }
+            other => panic!("expected Migrated, got {other:?}"),
+        }
+        // The disabled copy stays disabled; the agent copy stays parked.
+        assert!(!tmp.path().join(".agents/skills/pdf").exists());
+        assert!(
+            tmp.path()
+                .join(".agents/disabled-skills/pdf/SKILL.md")
+                .exists()
+        );
+        assert!(
+            tmp.path()
+                .join(".agents/backup-skills/claude-code/skills/pdf/SKILL.md")
+                .exists()
+        );
+        // The fresh skill was migrated normally.
+        assert!(tmp.path().join(".agents/skills/notes/SKILL.md").exists());
+    }
+
+    #[test]
+    fn migrate_from_backup_keeps_disabled_skills_disabled() {
+        // Already linked agent with a parked copy; the canonical skill is then
+        // disabled. Rerunning with --migrate must not pull the parked copy in.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = env_at(&tmp);
+        // Canonical skill + the agent's own copy of the same name.
+        let src = tmp.path().join("src-skill");
+        let skill = write_and_parse_skill(&src, "pdf");
+        install_skill(&skill, false, &env);
+        let existing = tmp.path().join(".claude/skills/pdf");
+        fs::create_dir_all(&existing).unwrap();
+        fs::write(existing.join("SKILL.md"), "agent copy").unwrap();
+        let agent = get_agent("claude-code").unwrap();
+        // Plain link: the agent copy is parked (name clash keeps canonical).
+        match link_agent(agent, false, &env, true) {
+            LinkOutcome::Migrated { moved, skipped, .. } => {
+                assert!(moved.is_empty());
+                assert_eq!(skipped, vec!["pdf"]);
+            }
+            other => panic!("expected Migrated, got {other:?}"),
+        }
+        // Disable the canonical copy, then rerun --migrate.
+        move_skill("pdf", false, false, &env).unwrap();
+        match link_agent(agent, false, &env, true) {
+            LinkOutcome::Migrated { moved, skipped, .. } => {
+                assert!(moved.is_empty(), "disabled skill must not be imported");
+                assert_eq!(skipped, vec!["pdf"]);
+            }
+            other => panic!("expected Migrated, got {other:?}"),
+        }
+        assert!(!tmp.path().join(".agents/skills/pdf").exists());
+        assert!(
+            tmp.path()
+                .join(".agents/disabled-skills/pdf/SKILL.md")
+                .exists()
+        );
     }
 
     #[test]

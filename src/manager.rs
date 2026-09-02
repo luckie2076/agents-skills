@@ -255,7 +255,8 @@ impl Manager {
     /// agent dir that does not go into the canonical dir is parked in a backup
     /// slot (`<base>/.agents/backup-skills/<agent>`); unlink restores it. With
     /// `req.migrate`, skill subdirs are moved into the canonical dir instead —
-    /// name clashes keep the canonical copy (the agent-side copy is parked,
+    /// name clashes keep the canonical copy, and names disabled in the
+    /// `disabled-skills` dir stay disabled (the agent-side copy is parked,
     /// reported via [`LinkOutcome::Migrated`] `skipped`) — and only non-skill
     /// entries are parked. Rerunning with `migrate` on an already linked agent
     /// pulls parked skills out of the backup slot. Legacy per-skill symlinks
